@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:sharktv_flutter/helpers/data.dart';
 import 'package:sharktv_flutter/livetv.dart';
 import 'package:sharktv_flutter/settings.dart';
+// import 'package:sharktv_flutter/livetv.dart';
+// import 'package:sharktv_flutter/settings.dart';
 
 void main() {
   runApp(const IPTVApp());
@@ -24,6 +27,26 @@ class IPTVApp extends StatelessWidget {
   }
 }
 
+class MyWidget extends StatefulWidget {
+  const MyWidget({super.key});
+
+  @override
+  State<MyWidget> createState() => _MyWidgetState();
+}
+
+class _MyWidgetState extends State<MyWidget> {
+  @override
+  void initState() {
+    super.initState();
+    setup();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container();
+  }
+}
+
 class MainScreen extends StatefulWidget {
   const MainScreen({Key? key}) : super(key: key);
 
@@ -33,8 +56,19 @@ class MainScreen extends StatefulWidget {
 
 class _MainScreenState extends State<MainScreen> {
   int _selectedIndex = 0;
+  List<Widget> _screens = [Container(), Container()];
 
-  final List<Widget> _screens = [const LiveTVScreen(), const SettingsScreen()];
+  @override
+  void initState() {
+    super.initState();
+
+    setup().then((value) {
+      value.sort((a, b) => b.channels2.length.compareTo(a.channels2.length));
+      setState(() {
+        _screens = [LiveTVScreen(countries: value), SettingsScreen()];
+      });
+    });
+  }
 
   @override
   Widget build(BuildContext context) {

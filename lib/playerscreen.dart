@@ -2,13 +2,14 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:outlined_text/outlined_text.dart';
+import 'package:sharktv_flutter/helpers/data.dart';
 import 'package:sharktv_flutter/livetv.dart';
 import 'package:video_view/video_view.dart';
 
 class PlayerScreen extends StatefulWidget {
-  final Map<String, String> playlist;
+  final List<Channel> channels;
 
-  const PlayerScreen({super.key, required this.playlist});
+  const PlayerScreen({super.key, required this.channels});
 
   @override
   State<PlayerScreen> createState() => _PlayerScreenState();
@@ -49,16 +50,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
       setState(() => _query = v);
     });
 
-    http.get(Uri.parse(widget.playlist["Playlist"]!)).then((response) {
-      if (!mounted) return;
-      setState(() {
-        channels = convertM3u(response.body);
-        currentChannel = channels.firstOrNull;
-      });
-
-      if (currentChannel != null) {
-        videoController.open(currentChannel!.link);
-      }
+    setState(() {
+      channels = widget.channels;
+      _playChannel(channels.first);
     });
   }
 
@@ -93,13 +87,13 @@ class _PlayerScreenState extends State<PlayerScreen> {
   void _playChannel(Channel ch) {
     _showUiAndScheduleHide();
     setState(() => currentChannel = ch);
-    videoController.open(ch.link);
+    videoController.open(ch.url);
   }
 
   List<Channel> get _filteredChannels {
     final q = _query.trim().toLowerCase();
     if (q.isEmpty) return channels;
-    return channels.where((c) => c.title.toLowerCase().contains(q)).toList();
+    return channels.where((c) => c.name.toLowerCase().contains(q)).toList();
   }
 
   @override
@@ -188,7 +182,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                                               SizedBox(width: 12),
                                               OutlinedText(
                                                 text: Text(
-                                                  currentChannel?.title ?? "",
+                                                  currentChannel?.name ?? "",
                                                   style: TextStyle(
                                                     fontWeight: FontWeight.bold,
                                                     fontSize: 14,
@@ -361,7 +355,7 @@ class _SideMenu extends StatelessWidget {
                               ? Colors.white.withOpacity(0.08)
                               : Colors.transparent,
                           child: Text(
-                            item.title,
+                            item.name,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
