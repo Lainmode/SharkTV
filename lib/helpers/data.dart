@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:math';
 
 import 'package:isar/isar.dart';
 import 'package:http/http.dart' as http;
@@ -50,7 +49,7 @@ List<Channel> parseChannels(
   }
 
   final dbChannels = <Channel>[];
-  dbChannels.length = 0; // (no-op, just explicit)
+  dbChannels.length = 0;
 
   for (final item in streams) {
     final channelId = item["channel"];
@@ -65,7 +64,7 @@ List<Channel> parseChannels(
       item["channel"] ?? item["title"],
       item["title"],
       channel?["alt_names"]?.toString(),
-      channel?["quality"] ?? "Unknown Quality",
+      item?["quality"] ?? "Unknown Quality",
       logo,
       DateTime.tryParse((item["launched"] ?? "") as String),
       DateTime.tryParse((item["closed"] ?? "") as String),
@@ -77,7 +76,7 @@ List<Channel> parseChannels(
     );
 
     dbChannel.country.value = country;
-    country.channels2.add(dbChannel);
+    country.rawChannels.add(dbChannel);
     dbChannels.add(dbChannel);
   }
 
@@ -113,7 +112,7 @@ class Country {
   String flag;
 
   IsarLinks<Channel> channels = IsarLinks<Channel>();
-  List<Channel> channels2 = [];
+  List<Channel> rawChannels = [];
 
   // IsarLinks<Language> languages = IsarLinks<Language>();
 

@@ -13,7 +13,8 @@ class LiveTVScreen extends StatelessWidget {
     return CustomScrollView(
       slivers: [
         SliverAppBar(
-          floating: true,
+          floating: false,
+          pinned: true,
           title: const Text('Live TV'),
           actions: [
             IconButton(icon: const Icon(Icons.search), onPressed: () {}),
@@ -24,8 +25,8 @@ class LiveTVScreen extends StatelessWidget {
           padding: const EdgeInsets.all(16.0),
           sliver: SliverGrid(
             gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
-              maxCrossAxisExtent: 200,
-              childAspectRatio: 1.5,
+              maxCrossAxisExtent: 500,
+              childAspectRatio: 2,
               crossAxisSpacing: 12,
               mainAxisSpacing: 12,
             ),
@@ -42,41 +43,77 @@ class LiveTVScreen extends StatelessWidget {
   }
 
   Widget _buildChannelCard(BuildContext context, int index) {
-    var country = countries[index];
-    if (country.iso2 == "UK") {
-      country.iso2 = "GB";
-    }
-    return InkWell(
-      borderRadius: BorderRadius.circular(8),
-      onTap: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) =>
-                PlayerScreen(channels: country.channels2.toList()),
-          ),
-        );
-      },
-      child: Ink(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(8),
-          gradient: LinearGradient(
-            colors: [const Color.fromARGB(255, 37, 40, 41), Colors.blue[900]!],
-          ),
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            CountryFlag.fromCountryCode(
-              country.iso2,
-              theme: ImageTheme(shape: RoundedRectangle(8)),
-            ),
+    final country = countries[index];
+    final iso2 = country.iso2 == "UK" ? "GB" : country.iso2;
+    final radius = BorderRadius.circular(8);
 
-            const SizedBox(height: 8),
-            Text(country.name),
-            Text('${country.channels2.length}'),
-          ],
-        ),
+    return ClipRRect(
+      borderRadius: radius,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          // 1) Flag background
+          CountryFlag.fromCountryCode(iso2),
+
+          // 2) Readability overlay
+          DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Colors.black.withOpacity(0.20),
+                  Colors.black.withOpacity(0.65),
+                ],
+              ),
+            ),
+          ),
+
+          // 3) Ripple layer (IMPORTANT: ripple paints on this Material)
+          Positioned.fill(
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                borderRadius: radius,
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) =>
+                          PlayerScreen(channels: country.rawChannels.toList()),
+                    ),
+                  );
+                },
+                child: Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.play_circle, size: 54),
+                      Text(
+                        country.name,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '${country.rawChannels.length} channels',
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+
+          // 4) Foreground content (above ripple)
+        ],
       ),
     );
   }

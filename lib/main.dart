@@ -16,11 +16,8 @@ class IPTVApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'IPTV Player',
-      theme: ThemeData.dark().copyWith(
-        primaryColor: const Color(0xFF6C63FF),
-        scaffoldBackgroundColor: const Color(0xFF0F0F0F),
-        cardColor: const Color(0xFF1A1A1A),
-      ),
+      themeMode: ThemeMode.dark,
+      darkTheme: ThemeData.dark(),
       home: const MainScreen(),
       debugShowCheckedModeBanner: false,
     );
@@ -56,58 +53,80 @@ class MainScreen extends StatefulWidget {
 
 class _MainScreenState extends State<MainScreen> {
   int _selectedIndex = 0;
-  List<Widget> _screens = [Container(), Container()];
+
+  List<Country>? _countries;
 
   @override
   void initState() {
     super.initState();
-
     setup().then((value) {
-      value.sort((a, b) => b.channels2.length.compareTo(a.channels2.length));
-      setState(() {
-        _screens = [LiveTVScreen(countries: value), SettingsScreen()];
-      });
+      value.sort(
+        (a, b) => b.rawChannels.length.compareTo(a.rawChannels.length),
+      );
+      if (!mounted) return;
+      setState(() => _countries = value);
     });
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Row(
-        children: [
-          // Side Navigation for larger screens
-          if (MediaQuery.of(context).size.width > 600)
-            NavigationRail(
-              selectedIndex: _selectedIndex,
-              onDestinationSelected: (int index) {
-                setState(() {
-                  _selectedIndex = index;
-                });
-              },
-              backgroundColor: const Color(0xFF1A1A1A),
-              indicatorShape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(colors: [Colors.black, Colors.blue]),
+        ),
+        child: Material(
+          child: Row(
+            children: [
+              // Side Navigation for larger screens
+              if (MediaQuery.of(context).size.width > 600)
+                NavigationRail(
+                  backgroundColor: Colors.transparent,
+                  selectedIndex: _selectedIndex,
+                  onDestinationSelected: (int index) {
+                    setState(() {
+                      _selectedIndex = index;
+                    });
+                  },
+                  indicatorShape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+
+                  destinations: const [
+                    NavigationRailDestination(
+                      icon: Icon(Icons.live_tv_outlined),
+                      selectedIcon: Icon(Icons.live_tv),
+                      label: Text('Live TV'),
+                    ),
+
+                    // NavigationRailDestination(
+                    //   icon: Icon(Icons.settings_outlined),
+                    //   selectedIcon: Icon(Icons.settings),
+                    //   label: Text('Settings'),
+                    // ),
+                  ],
+                ),
+              Expanded(
+                child: _countries == null
+                    ? const Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            CircularProgressIndicator(),
+                            SizedBox(height: 12),
+                            Text("Loading Channels..."),
+                          ],
+                        ),
+                      )
+                    : LiveTVScreen(countries: _countries!),
               ),
-
-              destinations: const [
-                NavigationRailDestination(
-                  icon: Icon(Icons.live_tv_outlined),
-                  selectedIcon: Icon(Icons.live_tv),
-                  label: Text('Live TV'),
-                ),
-
-                NavigationRailDestination(
-                  icon: Icon(Icons.settings_outlined),
-                  selectedIcon: Icon(Icons.settings),
-                  label: Text('Settings'),
-                ),
-              ],
-            ),
-          Expanded(child: _screens[_selectedIndex]),
-        ],
+            ],
+          ),
+        ),
       ),
       bottomNavigationBar: MediaQuery.of(context).size.width <= 600
           ? NavigationBar(
+              backgroundColor: Colors.black,
               selectedIndex: _selectedIndex,
               onDestinationSelected: (int index) {
                 setState(() {
@@ -121,11 +140,11 @@ class _MainScreenState extends State<MainScreen> {
                   label: 'Live TV',
                 ),
 
-                NavigationDestination(
-                  icon: Icon(Icons.settings_outlined),
-                  selectedIcon: Icon(Icons.settings),
-                  label: 'Settings',
-                ),
+                // NavigationDestination(
+                //   icon: Icon(Icons.settings_outlined),
+                //   selectedIcon: Icon(Icons.settings),
+                //   label: 'Settings',
+                // ),
               ],
             )
           : null,
@@ -288,4 +307,8 @@ class HomeScreen extends StatelessWidget {
       ],
     );
   }
+}
+
+extension ThemeContext on BuildContext {
+  ThemeData get currentTheme => Theme.of(this);
 }

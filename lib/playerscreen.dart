@@ -121,16 +121,24 @@ class _PlayerScreenState extends State<PlayerScreen> {
                       duration: _menuAnimDuration,
                       curve: Curves.easeOutCubic,
                       width: _menuOpen ? menuWidth : 0,
-                      child: _menuOpen
-                          ? _SideMenu(
+                      child: ClipRect(
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          widthFactor:
+                              1, // keep it laid out normally; ClipRect will hide overflow
+                          child: IgnorePointer(
+                            ignoring: !_menuOpen,
+                            child: _SideMenu(
                               channels: _filteredChannels,
                               currentChannel: currentChannel,
                               searchCtrl: _searchCtrl,
                               onSelect: _playChannel,
                               onClose: _toggleMenu,
                               onAnyInteraction: _showUiAndScheduleHide,
-                            )
-                          : const SizedBox.shrink(),
+                            ),
+                          ),
+                        ),
+                      ),
                     ),
 
                     // VIDEO AREA (controls are clipped to this box)
@@ -282,7 +290,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   }
 }
 
-class _SideMenu extends StatelessWidget {
+class _SideMenu extends StatefulWidget {
   final List<Channel> channels;
   final Channel? currentChannel;
   final TextEditingController searchCtrl;
@@ -297,10 +305,22 @@ class _SideMenu extends StatelessWidget {
     required this.onClose,
     required this.onSelect,
     required this.onAnyInteraction,
+    super.key,
   });
 
   @override
+  State<_SideMenu> createState() => _SideMenuState();
+}
+
+class _SideMenuState extends State<_SideMenu>
+    with AutomaticKeepAliveClientMixin<_SideMenu> {
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
   Widget build(BuildContext context) {
+    super.build(context); // IMPORTANT for keep-alive
+
     return Container(
       color: const Color(0xFF0E0E0E),
       child: SafeArea(
@@ -312,10 +332,10 @@ class _SideMenu extends StatelessWidget {
               children: [
                 // Header area
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
+                  padding: EdgeInsets.fromLTRB(12, 10, 12, 8),
                   child: Text(
-                    "Channels",
-                    style: const TextStyle(
+                    widget.currentChannel?.country.value?.name ?? "-",
+                    style: TextStyle(
                       color: Colors.white,
                       fontSize: 16,
                       fontWeight: FontWeight.w600,
@@ -328,7 +348,7 @@ class _SideMenu extends StatelessWidget {
                 // Search bar
                 Padding(
                   padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
-                  child: _SearchField(controller: searchCtrl),
+                  child: _SearchField(controller: widget.searchCtrl),
                 ),
 
                 const Divider(height: 1, color: Colors.white12),
@@ -336,15 +356,15 @@ class _SideMenu extends StatelessWidget {
                 Expanded(
                   child: ListView.builder(
                     padding: const EdgeInsets.symmetric(vertical: 8),
-                    itemCount: channels.length,
+                    itemCount: widget.channels.length,
                     itemBuilder: (context, index) {
-                      final item = channels[index];
-                      final bool selected = item == currentChannel;
+                      final item = widget.channels[index];
+                      final bool selected = item == widget.currentChannel;
 
                       return InkWell(
                         onTap: () {
-                          onAnyInteraction();
-                          onSelect(item);
+                          widget.onAnyInteraction();
+                          widget.onSelect(item);
                         },
                         child: Container(
                           padding: const EdgeInsets.symmetric(
@@ -354,16 +374,24 @@ class _SideMenu extends StatelessWidget {
                           color: selected
                               ? Colors.white.withOpacity(0.08)
                               : Colors.transparent,
-                          child: Text(
-                            item.name,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: selected ? Colors.white : Colors.white70,
-                              fontWeight: selected
-                                  ? FontWeight.w600
-                                  : FontWeight.w400,
-                            ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                item.name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: selected
+                                      ? Colors.white
+                                      : Colors.white70,
+                                  fontWeight: selected
+                                      ? FontWeight.w600
+                                      : FontWeight.w400,
+                                ),
+                              ),
+                              Text(item.quality),
+                            ],
                           ),
                         ),
                       );
@@ -382,8 +410,8 @@ class _SideMenu extends StatelessWidget {
                 child: _OverlayButton(
                   icon: Icons.chevron_left,
                   onTap: () {
-                    onAnyInteraction();
-                    onClose();
+                    widget.onAnyInteraction();
+                    widget.onClose();
                   },
                 ),
               ),
