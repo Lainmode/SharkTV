@@ -17,9 +17,74 @@ Future<List<Country>> setup() async {
   var dbCountries = parseCountries(countries);
   dbCountries.add(Country("Unknown", "AQ", "AQ"));
 
+  // ✅ Create Favorites country
+  final favorites = Country("Pinned", "FV", "⭐");
+  dbCountries.add(favorites);
+
+  // Existing IPTV-org parsing
   parseChannels(channels, streams, logos, dbCountries, dbCategories);
 
+  // ✅ Pull USA TV catalog and put it under Favorites
+  final usaTvCatalog = await fetch(
+    "https://848b3516657c-usatv.baby-beamup.club/catalog/tv/all.json",
+  );
+  parseUsaTvCatalogIntoFavorites(usaTvCatalog, favorites);
+
   return dbCountries;
+}
+
+List<Channel> parseUsaTvCatalogIntoFavorites(
+  dynamic usaTvCatalogJson,
+  Country favorites,
+) {
+  final metas = (usaTvCatalogJson is Map<String, dynamic>)
+      ? (usaTvCatalogJson["metas"] as List<dynamic>? ?? const [])
+      : const <dynamic>[];
+
+  final created = <Channel>[];
+
+  for (final meta in metas) {
+    if (meta is! Map<String, dynamic>) continue;
+
+    final channelName = (meta["name"] as String?) ?? "Unknown";
+    final logo = (meta["logo"] as String?) ?? (meta["poster"] as String?);
+
+    final streams = (meta["streams"] as List<dynamic>?) ?? const [];
+    if (streams.isEmpty) continue;
+
+    // Create one Channel per stream option (HD/SD, different providers, etc.)
+    for (final s in streams) {
+      if (s is! Map<String, dynamic>) continue;
+
+      final url = s["url"] as String?;
+      if (url == null || url.isEmpty) continue;
+
+      final quality = (s["name"] as String?) ?? "Unknown Quality";
+      final description = (s["description"] as String?) ?? "";
+      final titleSuffix = description.isNotEmpty ? " • $description" : "";
+
+      final ch = Channel(
+        meta["id"] ?? channelName, // channel (internal id-ish)
+        "$channelName$titleSuffix", // name (display)
+        null, // altNames
+        quality,
+        logo,
+        null, // launchedOn
+        null, // closedOn
+        null, // network
+        null, // website
+        url, // stream url
+        null, // userAgent
+        null, // referer
+      );
+
+      ch.country.value = favorites;
+      favorites.rawChannels.add(ch);
+      created.add(ch);
+    }
+  }
+
+  return created;
 }
 
 List<Channel> parseChannels(

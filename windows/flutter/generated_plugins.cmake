@@ -3,7 +3,11 @@
 #
 
 list(APPEND FLUTTER_PLUGIN_LIST
+  fullscreen_window
   isar_flutter_libs
+  media_kit_libs_windows_audio
+  media_kit_libs_windows_video
+  media_kit_video
   video_view
 )
 

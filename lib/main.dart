@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:media_kit/media_kit.dart';
 import 'package:sharktv_flutter/helpers/data.dart';
 import 'package:sharktv_flutter/livetv.dart';
 import 'package:sharktv_flutter/settings.dart';
 // import 'package:sharktv_flutter/livetv.dart';
 // import 'package:sharktv_flutter/settings.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  MediaKit.ensureInitialized();
   runApp(const IPTVApp());
 }
 
@@ -63,6 +66,11 @@ class _MainScreenState extends State<MainScreen> {
       value.sort(
         (a, b) => b.rawChannels.length.compareTo(a.rawChannels.length),
       );
+      final favIndex = value.indexWhere((c) => c.iso2 == "FV");
+      if (favIndex > 0) {
+        final fav = value.removeAt(favIndex);
+        value.insert(0, fav);
+      }
       if (!mounted) return;
       setState(() => _countries = value);
     });

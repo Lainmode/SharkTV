@@ -1,8 +1,10 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:fullscreen_window/fullscreen_window.dart';
+import 'package:media_kit/media_kit.dart';
 import 'package:outlined_text/outlined_text.dart';
 import 'package:sharktv_flutter/helpers/data.dart';
-import 'package:video_view/video_view.dart';
+import 'package:media_kit_video/media_kit_video.dart';
 
 class PlayerScreen extends StatefulWidget {
   final List<Channel> channels;
@@ -16,11 +18,13 @@ class PlayerScreen extends StatefulWidget {
 class _PlayerScreenState extends State<PlayerScreen> {
   List<Channel> channels = [];
   Channel? currentChannel;
-  var error;
+  bool isFullScreen = false;
 
-  final VideoController videoController = VideoController();
+  late final Player player = Player();
+  late final VideoController videoController = VideoController(player);
 
   bool _menuOpen = false;
+  String? error;
 
   bool _uiVisible = true;
   Timer? _hideTimer;
@@ -30,7 +34,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   bool _muted = false;
 
-  static const Duration _uiHideDelay = Duration(seconds: 3);
+  static const Duration _uiHideDelay = Duration(seconds: 2);
   static const Duration _fadeDuration = Duration(milliseconds: 250);
   static const Duration _menuAnimDuration = Duration(milliseconds: 280);
 
@@ -49,14 +53,20 @@ class _PlayerScreenState extends State<PlayerScreen> {
       channels = widget.channels;
       _playChannel(channels.first);
     });
+
+    player.stream.error.listen((var err) {
+      setState(() {
+        error = err;
+      });
+    });
   }
 
   @override
   void dispose() {
     _hideTimer?.cancel();
     _searchCtrl.dispose();
-    videoController.close();
-    videoController.dispose();
+    player.stop();
+    player.dispose();
     super.dispose();
   }
 
@@ -81,8 +91,24 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   void _playChannel(Channel ch) {
     _showUiAndScheduleHide();
-    setState(() => currentChannel = ch);
-    videoController.open(ch.url);
+    setState(() {
+      error = null;
+      currentChannel = ch;
+    });
+    Map<String, String>? referer = ch.referer != null
+        ? {"Referer": ?ch.referer}
+        : null;
+    player.open(
+      Media(
+        ch.url,
+        httpHeaders: {
+          'User-Agent':
+              ch.userAgent ??
+              "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36 Edg/91.0.864.70",
+          ...?referer,
+        },
+      ),
+    );
   }
 
   List<Channel> get _filteredChannels {
@@ -143,15 +169,51 @@ class _PlayerScreenState extends State<PlayerScreen> {
                                 onTap: () {
                                   setState(() => _menuOpen = false);
                                 },
-                                child: VideoView(
-                                  controller: videoController,
-                                  autoPlay: true,
-                                  onCreated: (player) =>
-                                      player.error.addListener(
-                                        () => setState(
-                                          () => error = player.error.value,
+                                child: Stack(
+                                  children: [
+                                    Video(
+                                      controls: (state) {
+                                        return Container();
+                                      },
+
+                                      controller: videoController,
+
+                                      // onCreated: (player) {
+                                      //   player.error.addListener(
+                                      //     () => setState(
+                                      //       () => error = player.error.value,
+                                      //     ),
+                                      //   );
+                                      // },
+                                    ),
+
+                                    if (error != null)
+                                      Center(
+                                        child: Card(
+                                          child: Padding(
+                                            padding: EdgeInsets.all(16),
+                                            child: Column(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Icon(Icons.info, size: 42),
+                                                SizedBox(height: 12),
+                                                Text(error!),
+                                                SizedBox(height: 12),
+
+                                                ElevatedButton(
+                                                  onPressed: () {
+                                                    _playChannel(
+                                                      currentChannel!,
+                                                    );
+                                                  },
+                                                  child: Text("Retry"),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
                                         ),
                                       ),
+                                  ],
                                 ),
                               ),
                             ),
@@ -226,31 +288,43 @@ class _PlayerScreenState extends State<PlayerScreen> {
                                             width: double.maxFinite,
                                             child: Row(
                                               children: [
-                                                Row(
-                                                  children: [
-                                                    IconButton(
-                                                      onPressed: () {
-                                                        setState(() {
-                                                          videoController.setVolume(
-                                                            videoController
-                                                                        .volume
-                                                                        .value ==
-                                                                    0
-                                                                ? 100
-                                                                : 0,
-                                                          );
-                                                        });
-                                                      },
-                                                      icon: Icon(
-                                                        videoController
-                                                                    .volume
-                                                                    .value ==
-                                                                0
-                                                            ? Icons.volume_off
-                                                            : Icons.volume_up,
+                                                Expanded(
+                                                  child: Row(
+                                                    children: [
+                                                      IconButton(
+                                                        onPressed: () {
+                                                          setState(() {
+                                                            player.setVolume(
+                                                              player.state.volume ==
+                                                                      0
+                                                                  ? 100
+                                                                  : 0,
+                                                            );
+                                                          });
+                                                        },
+                                                        icon: Icon(
+                                                          player.state.volume ==
+                                                                  0
+                                                              ? Icons.volume_off
+                                                              : Icons.volume_up,
+                                                        ),
                                                       ),
-                                                    ),
-                                                  ],
+                                                      Spacer(),
+
+                                                      IconButton(
+                                                        onPressed: () {
+                                                          isFullScreen =
+                                                              !isFullScreen;
+                                                          FullScreenWindow.setFullScreen(
+                                                            isFullScreen,
+                                                          );
+                                                        },
+                                                        icon: Icon(
+                                                          Icons.fullscreen,
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
                                                 ),
                                               ],
                                             ),
