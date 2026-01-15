@@ -1,9 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
 import 'package:outlined_text/outlined_text.dart';
 import 'package:sharktv_flutter/helpers/data.dart';
-import 'package:sharktv_flutter/livetv.dart';
 import 'package:video_view/video_view.dart';
 
 class PlayerScreen extends StatefulWidget {
@@ -24,15 +22,12 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   bool _menuOpen = false;
 
-  // UI fade
   bool _uiVisible = true;
   Timer? _hideTimer;
 
-  // Search
   final TextEditingController _searchCtrl = TextEditingController();
   String _query = "";
 
-  // Video "controls" state (simple custom overlay)
   bool _muted = false;
 
   static const Duration _uiHideDelay = Duration(seconds: 3);
@@ -113,7 +108,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
             onTap: _showUiAndScheduleHide,
             child: Stack(
               children: [
-                // Layout: menu displaces video
                 Row(
                   children: [
                     // MENU
@@ -124,8 +118,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                       child: ClipRect(
                         child: Align(
                           alignment: Alignment.centerLeft,
-                          widthFactor:
-                              1, // keep it laid out normally; ClipRect will hide overflow
+                          widthFactor: 1,
                           child: IgnorePointer(
                             ignoring: !_menuOpen,
                             child: _SideMenu(
@@ -141,7 +134,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
                       ),
                     ),
 
-                    // VIDEO AREA (controls are clipped to this box)
                     Expanded(
                       child: ClipRect(
                         child: Stack(
@@ -164,8 +156,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
                               ),
                             ),
 
-                            // Video overlays (fade out) - these NEVER overlap menu because
-                            // they're inside this Expanded box only.
                             Positioned.fill(
                               child: IgnorePointer(
                                 ignoring: !_uiVisible,
@@ -176,7 +166,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
                                   child: SafeArea(
                                     child: Stack(
                                       children: [
-                                        // Back button (top-left) - moves right if menu is open
                                         Positioned(
                                           top: 8,
                                           left: 8,
@@ -201,7 +190,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
                                           ),
                                         ),
 
-                                        // Open menu button (left edge, centered) only when menu closed
                                         Positioned(
                                           left: 6,
                                           top: 0,
@@ -216,7 +204,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
                                           ),
                                         ),
 
-                                        // Channel title (bottom-left)
                                         Positioned(
                                           bottom: 12,
                                           left: 12,
@@ -319,7 +306,7 @@ class _SideMenuState extends State<_SideMenu>
 
   @override
   Widget build(BuildContext context) {
-    super.build(context); // IMPORTANT for keep-alive
+    super.build(context);
 
     return Container(
       color: const Color(0xFF0E0E0E),
@@ -330,7 +317,6 @@ class _SideMenuState extends State<_SideMenu>
             Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                // Header area
                 Padding(
                   padding: EdgeInsets.fromLTRB(12, 10, 12, 8),
                   child: Text(
@@ -345,7 +331,6 @@ class _SideMenuState extends State<_SideMenu>
                   ),
                 ),
 
-                // Search bar
                 Padding(
                   padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
                   child: _SearchField(controller: widget.searchCtrl),
@@ -401,7 +386,6 @@ class _SideMenuState extends State<_SideMenu>
               ],
             ),
 
-            // Close button: centered vertically, on the right inside the menu
             Positioned(
               right: 6,
               top: 0,
