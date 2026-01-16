@@ -17,14 +17,11 @@ Future<List<Country>> setup() async {
   var dbCountries = parseCountries(countries);
   dbCountries.add(Country("Unknown", "AQ", "AQ"));
 
-  // ✅ Create Favorites country
   final favorites = Country("Pinned", "FV", "⭐");
   dbCountries.add(favorites);
 
-  // Existing IPTV-org parsing
   parseChannels(channels, streams, logos, dbCountries, dbCategories);
 
-  // ✅ Pull USA TV catalog and put it under Favorites
   final usaTvCatalog = await fetch(
     "https://848b3516657c-usatv.baby-beamup.club/catalog/tv/all.json",
   );
@@ -52,7 +49,6 @@ List<Channel> parseUsaTvCatalogIntoFavorites(
     final streams = (meta["streams"] as List<dynamic>?) ?? const [];
     if (streams.isEmpty) continue;
 
-    // Create one Channel per stream option (HD/SD, different providers, etc.)
     for (final s in streams) {
       if (s is! Map<String, dynamic>) continue;
 
@@ -94,7 +90,6 @@ List<Channel> parseChannels(
   List<Country> dbCountries,
   List<Category> dbCategories,
 ) {
-  // Index countries once
   final countryByIso2 = <String, Country>{
     for (final c in dbCountries) c.iso2: c,
   };
@@ -103,10 +98,8 @@ List<Channel> parseChannels(
       countryByIso2["AQ"] ??
       (throw StateError('Country with iso2 "AQ" not found'));
 
-  // Index channels by id once (assumes channel["id"] is unique)
   final channelById = <dynamic, dynamic>{for (final c in channels) c["id"]: c};
 
-  // Index logos by channel once (first wins)
   final logoByChannel = <dynamic, String?>{};
   for (final l in logos) {
     final key = l["channel"];
