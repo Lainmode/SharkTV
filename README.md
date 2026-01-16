@@ -7,7 +7,7 @@ A Flutter IPTV browser/player that fetches publicly available playlists (e.g., f
 
 ## Platforms
 - Web (less reliable due to browser limitations) [here](https://lainmode.github.io/)
-- Windows (most reliable) (See releases tab)
+- Windows (most reliable) [(See releases tab)](https://github.com/Lainmode/SharkTV/releases)
 - Untested on other platforms, but theoretically possible with minor modifications
 
 ## Build and Run
