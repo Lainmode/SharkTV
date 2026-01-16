@@ -1,16 +1,21 @@
-# sharktv_flutter
+# SharkTV
 
-A new Flutter project.
+A Flutter IPTV browser/player that fetches publicly available playlists (e.g., from [GitHub IPTV](https://github.com/iptv-org/iptv) and other sources) and presents channels in a clean, accessible UI.
 
-## Getting Started
+## Features
+- Browse channels in a simple, accessible interface grouped by countries
 
-This project is a starting point for a Flutter application.
+## Platforms
+- Web (less reliable due to browser limitations) [here](https://lainmode.github.io/)
+- Windows (most reliable) (See releases tab)
+- Untested on other platforms, but theoretically possible with minor modifications
 
-A few resources to get you started if this is your first Flutter project:
+## Build and Run
+### Requirements
+- Flutter (stable)
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
+### Run
+```bash
+flutter pub get
+flutter run
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
