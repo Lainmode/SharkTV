@@ -1,10 +1,9 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:fullscreen_window/fullscreen_window.dart';
-import 'package:media_kit/media_kit.dart';
 import 'package:outlined_text/outlined_text.dart';
 import 'package:sharktv_flutter/helpers/data.dart';
-import 'package:media_kit_video/media_kit_video.dart';
+import 'package:video_view/video_view.dart';
 
 class PlayerScreen extends StatefulWidget {
   final List<Channel> channels;
@@ -20,8 +19,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   Channel? currentChannel;
   bool isFullScreen = false;
 
-  late final Player player = Player();
-  late final VideoController videoController = VideoController(player);
+  final VideoController videoController = VideoController();
 
   bool _menuOpen = false;
   String? error;
@@ -53,20 +51,14 @@ class _PlayerScreenState extends State<PlayerScreen> {
       channels = widget.channels;
       _playChannel(channels.first);
     });
-
-    player.stream.error.listen((var err) {
-      setState(() {
-        error = err;
-      });
-    });
   }
 
   @override
   void dispose() {
     _hideTimer?.cancel();
     _searchCtrl.dispose();
-    player.stop();
-    player.dispose();
+    videoController.close();
+    videoController.dispose();
     super.dispose();
   }
 
@@ -95,20 +87,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
       error = null;
       currentChannel = ch;
     });
-    Map<String, String>? referer = ch.referer != null
-        ? {"Referer": ?ch.referer}
-        : null;
-    player.open(
-      Media(
-        ch.url,
-        // httpHeaders: {
-        //   'User-Agent':
-        //       ch.userAgent ??
-        //       "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36 Edg/91.0.864.70",
-        //   ...?referer,
-        // },
-      ),
-    );
+    videoController.open(ch.url);
   }
 
   List<Channel> get _filteredChannels {
@@ -171,20 +150,17 @@ class _PlayerScreenState extends State<PlayerScreen> {
                                 },
                                 child: Stack(
                                   children: [
-                                    Video(
-                                      controls: (state) {
-                                        return Container();
-                                      },
-
+                                    VideoView(
                                       controller: videoController,
+                                      autoPlay: true,
 
-                                      // onCreated: (player) {
-                                      //   player.error.addListener(
-                                      //     () => setState(
-                                      //       () => error = player.error.value,
-                                      //     ),
-                                      //   );
-                                      // },
+                                      onCreated: (player) {
+                                        player.error.addListener(
+                                          () => setState(
+                                            () => error = player.error.value,
+                                          ),
+                                        );
+                                      },
                                     ),
 
                                     if (error != null)
@@ -288,43 +264,43 @@ class _PlayerScreenState extends State<PlayerScreen> {
                                             width: double.maxFinite,
                                             child: Row(
                                               children: [
-                                                Expanded(
-                                                  child: Row(
-                                                    children: [
-                                                      IconButton(
-                                                        onPressed: () {
-                                                          setState(() {
-                                                            player.setVolume(
-                                                              player.state.volume ==
-                                                                      0
-                                                                  ? 100
-                                                                  : 0,
-                                                            );
-                                                          });
-                                                        },
-                                                        icon: Icon(
-                                                          player.state.volume ==
-                                                                  0
-                                                              ? Icons.volume_off
-                                                              : Icons.volume_up,
-                                                        ),
-                                                      ),
-                                                      Spacer(),
-
-                                                      IconButton(
-                                                        onPressed: () {
-                                                          isFullScreen =
-                                                              !isFullScreen;
-                                                          FullScreenWindow.setFullScreen(
-                                                            isFullScreen,
+                                                Row(
+                                                  children: [
+                                                    IconButton(
+                                                      onPressed: () {
+                                                        setState(() {
+                                                          videoController.setVolume(
+                                                            videoController
+                                                                        .volume
+                                                                        .value ==
+                                                                    0
+                                                                ? 100
+                                                                : 0,
                                                           );
-                                                        },
-                                                        icon: Icon(
-                                                          Icons.fullscreen,
-                                                        ),
+                                                        });
+                                                      },
+                                                      icon: Icon(
+                                                        videoController
+                                                                    .volume
+                                                                    .value ==
+                                                                0
+                                                            ? Icons.volume_off
+                                                            : Icons.volume_up,
                                                       ),
-                                                    ],
-                                                  ),
+                                                    ),
+                                                    IconButton(
+                                                      onPressed: () {
+                                                        isFullScreen =
+                                                            !isFullScreen;
+                                                        FullScreenWindow.setFullScreen(
+                                                          isFullScreen,
+                                                        );
+                                                      },
+                                                      icon: Icon(
+                                                        Icons.fullscreen,
+                                                      ),
+                                                    ),
+                                                  ],
                                                 ),
                                               ],
                                             ),
