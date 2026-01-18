@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:fullscreen_window/fullscreen_window.dart';
 import 'package:outlined_text/outlined_text.dart';
@@ -87,7 +89,35 @@ class _PlayerScreenState extends State<PlayerScreen> {
       error = null;
       currentChannel = ch;
     });
-    videoController.open(ch.url);
+    var extension = ch.url.substring(ch.url.lastIndexOf('.'));
+
+    String url;
+    if (!Platform.isWindows || extension == ".mpd") {
+      url = ch.url;
+    } else {
+      // build headers map
+      final Map<String, String> headers = {};
+
+      if (ch.userAgent != null && ch.userAgent!.isNotEmpty) {
+        headers["User-Agent"] = ch.userAgent!;
+      }
+
+      if (ch.referer != null && ch.referer!.isNotEmpty) {
+        headers["Referer"] = ch.referer!;
+      }
+
+      String query = "";
+      if (headers.isNotEmpty) {
+        final headersJson = jsonEncode(headers);
+        final headersBase64 = base64.encode(utf8.encode(headersJson));
+        query = "?headers=${Uri.encodeComponent(headersBase64)}";
+      }
+
+      final encodedUrl = base64.encode(utf8.encode(ch.url));
+
+      url = "http://localhost:8523/$encodedUrl$extension$query";
+    }
+    videoController.open(url);
   }
 
   List<Channel> get _filteredChannels {

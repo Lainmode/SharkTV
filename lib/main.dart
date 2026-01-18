@@ -1,3 +1,6 @@
+import 'dart:io';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:sharktv_flutter/helpers/data.dart';
@@ -5,11 +8,53 @@ import 'package:sharktv_flutter/livetv.dart';
 import 'package:sharktv_flutter/settings.dart';
 // import 'package:sharktv_flutter/livetv.dart';
 // import 'package:sharktv_flutter/settings.dart';
+import 'package:path/path.dart' as p;
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   MediaKit.ensureInitialized();
+
+  if (Platform.isWindows) {
+    final exeDir = File(Platform.resolvedExecutable).parent.path;
+
+    // If using proxy.exe:
+    final proxyPath = p.join(
+      exeDir,
+      'proxy',
+      'proxy.exe --port 8523 --req-insecure',
+    );
+
+    Process _proc = await Process.start(
+      proxyPath,
+      [],
+      workingDirectory: p.join(exeDir, 'proxy'),
+      environment: {'PORT': '8523', 'TARGET': 'http://localhost'},
+      runInShell: true,
+    );
+
+    final lifecycleHandler = AppLifecycleHandler(
+      onExit: () async {
+        _proc.kill(ProcessSignal.sigkill);
+      },
+    );
+
+    WidgetsBinding.instance.addObserver(lifecycleHandler);
+  }
+
   runApp(const IPTVApp());
+}
+
+class AppLifecycleHandler extends WidgetsBindingObserver {
+  final Future<void> Function() onExit;
+
+  AppLifecycleHandler({required this.onExit});
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.detached) {
+      onExit();
+    }
+  }
 }
 
 class IPTVApp extends StatelessWidget {
