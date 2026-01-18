@@ -360,6 +360,7 @@ class ProxySupervisor {
     required this.exeDir,
     this.port = 8523,
     this.verbosity = 3,
+    this.maxLogFiles = 5,
     this.rapidExitThreshold = const Duration(seconds: 2),
     this.maxRapidExits = 5,
   });
@@ -368,13 +369,12 @@ class ProxySupervisor {
   final int port;
   final int verbosity;
 
-  /// If the process exits quicker than this, we consider it a "rapid crash".
+  final int maxLogFiles;
   final Duration rapidExitThreshold;
-
-  /// After this many rapid crashes, we stop restarting.
   final int maxRapidExits;
 
   Process? _proc;
+
   bool _stopping = false;
   bool _disabled = false;
 
@@ -390,16 +390,25 @@ class ProxySupervisor {
     _stopping = false;
     _disabled = false;
 
-    // Per-run log file
+    await _pruneOldLogs(keep: maxLogFiles);
+
+    // Per-run log file (safe for filenames)
     final ts = DateTime.now().toIso8601String().replaceAll(':', '-');
-    _logPath ??= p.join(exeDir, 'proxy', 'proxy$ts.log');
-    _logSink ??= File(_logPath!).openWrite(mode: FileMode.append);
+    _logPath = p.join(exeDir, 'proxy', 'proxy$ts.log');
+    _logSink = File(_logPath!).openWrite(mode: FileMode.append);
+
+    _writeLog(
+      '--- ProxySupervisor start (port=$port, verbosity=$verbosity) ---',
+    );
 
     await _startOnce();
   }
 
   Future<void> stop() async {
+    _writeLog('--- ProxySupervisor stop requested ---');
     _stopping = true;
+    _disabled = true;
+
     await _killProcessTree();
     _proc = null;
 
@@ -411,10 +420,10 @@ class ProxySupervisor {
   Future<void> _startOnce() async {
     if (_stopping || _disabled) return;
 
-    // Skip start if port already taken
+    // Skip starting if port already taken.
     if (await _isPortListening(port)) {
       _writeLog('--- NOT starting: port $port is already LISTENING ---');
-      _disabled = true; // prevents restart-loop
+      _disabled = true; // prevent restart loops
       return;
     }
 
@@ -467,12 +476,12 @@ class ProxySupervisor {
     if (!identical(_proc, proc)) return;
 
     final startedAt = _lastStartAt;
-    final ranFor = (startedAt == null)
+    final ranFor = startedAt == null
         ? null
         : DateTime.now().difference(startedAt);
 
     _writeLog(
-      '--- proxy.exe pid=${proc.pid} exited with code $code (ranFor=${ranFor ?? "unknown"}) ---',
+      '--- proxy.exe pid=${proc.pid} exited code=$code ranFor=${ranFor ?? "unknown"} ---',
     );
 
     // If port is now taken, do not restart.
@@ -482,21 +491,20 @@ class ProxySupervisor {
       return;
     }
 
-    // Circuit breaker: too many rapid exits => stop restarting.
-    final isRapid = (ranFor != null && ranFor < rapidExitThreshold);
+    // Circuit breaker: too many rapid exits.
+    final isRapid = ranFor != null && ranFor < rapidExitThreshold;
     if (isRapid) {
       _rapidExitCount++;
       _writeLog(
-        '--- rapid exit $_rapidExitCount/$maxRapidExits (threshold=${rapidExitThreshold.inSeconds}s) ---',
+        '--- rapid exit $_rapidExitCount/$maxRapidExits '
+        '(threshold=${rapidExitThreshold.inMilliseconds}ms) ---',
       );
-
       if (_rapidExitCount >= maxRapidExits) {
         _writeLog('--- DISABLING restarts: too many rapid crashes ---');
         _disabled = true;
         return;
       }
     } else {
-      // If it stayed up long enough, reset rapid crash counter.
       _rapidExitCount = 0;
     }
 
@@ -506,7 +514,7 @@ class ProxySupervisor {
   Future<void> _scheduleRestart({required String reason}) async {
     if (_stopping || _disabled) return;
 
-    // (still) skip if port taken
+    // Avoid restart loops if port gets taken.
     if (await _isPortListening(port)) {
       _writeLog('--- NOT restarting: port $port is LISTENING ($reason) ---');
       _disabled = true;
@@ -526,6 +534,13 @@ class ProxySupervisor {
     await Future.delayed(Duration(milliseconds: delayMs));
 
     if (_stopping || _disabled) return;
+
+    // Check again after waiting.
+    if (await _isPortListening(port)) {
+      _writeLog('--- NOT restarting after delay: port $port is LISTENING ---');
+      _disabled = true;
+      return;
+    }
 
     await _killProcessTree();
     _proc = null;
@@ -551,10 +566,43 @@ class ProxySupervisor {
   void _writeLog(String line) {
     final ts = DateTime.now().toIso8601String();
     _logSink?.writeln('[$ts] $line');
+    // If you also want console output, uncomment:
+    // print('[$ts] $line');
+  }
+
+  /// Keeps only the newest [keep] proxy*.log files in exeDir/proxy.
+  /// Deletes the oldest ones at startup (before opening the new log).
+  Future<void> _pruneOldLogs({required int keep}) async {
+    if (keep <= 0) return;
+
+    final dir = Directory(p.join(exeDir, 'proxy'));
+    if (!await dir.exists()) return;
+
+    final files = <File>[];
+    await for (final ent in dir.list(followLinks: false)) {
+      if (ent is! File) continue;
+      final name = p.basename(ent.path);
+      if (!name.startsWith('proxy') || p.extension(name) != '.log') continue;
+      files.add(ent);
+    }
+
+    if (files.length < keep) return;
+
+    files.sort((a, b) => a.lastModifiedSync().compareTo(b.lastModifiedSync()));
+
+    // We want to end up with (keep - 1) old files, then we create the new one => keep total.
+    final toDelete = files.length - (keep - 1);
+    for (int i = 0; i < toDelete; i++) {
+      try {
+        await files[i].delete();
+      } catch (_) {
+        // ignore failures (file locked, permissions, etc.)
+      }
+    }
   }
 
   /// Windows: netstat LISTENING check.
-  /// Non-Windows: try bind to detect use.
+  /// Non-Windows: bind check.
   Future<bool> _isPortListening(int port) async {
     if (Platform.isWindows) {
       final res = await Process.run('cmd', [
