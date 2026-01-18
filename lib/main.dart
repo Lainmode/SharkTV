@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -6,8 +7,7 @@ import 'package:media_kit/media_kit.dart';
 import 'package:sharktv_flutter/helpers/data.dart';
 import 'package:sharktv_flutter/livetv.dart';
 import 'package:sharktv_flutter/settings.dart';
-// import 'package:sharktv_flutter/livetv.dart';
-// import 'package:sharktv_flutter/settings.dart';
+
 import 'package:path/path.dart' as p;
 
 void main() async {
@@ -17,24 +17,12 @@ void main() async {
   if (Platform.isWindows) {
     final exeDir = File(Platform.resolvedExecutable).parent.path;
 
-    // If using proxy.exe:
-    final proxyPath = p.join(
-      exeDir,
-      'proxy',
-      'proxy.exe --port 8523 --req-insecure',
-    );
-
-    Process _proc = await Process.start(
-      proxyPath,
-      [],
-      workingDirectory: p.join(exeDir, 'proxy'),
-      environment: {'PORT': '8523', 'TARGET': 'http://localhost'},
-      runInShell: true,
-    );
+    final supervisor = ProxySupervisor(exeDir: exeDir, port: 8523);
+    await supervisor.start();
 
     final lifecycleHandler = AppLifecycleHandler(
       onExit: () async {
-        _proc.kill(ProcessSignal.sigkill);
+        await supervisor.stop();
       },
     );
 
@@ -364,4 +352,114 @@ class HomeScreen extends StatelessWidget {
 
 extension ThemeContext on BuildContext {
   ThemeData get currentTheme => Theme.of(this);
+}
+
+class ProxySupervisor {
+  ProxySupervisor({required this.exeDir, this.port = 8523});
+
+  final String exeDir;
+  final int port;
+
+  Process? _proc;
+  bool _stopping = false;
+  int _restartCount = 0;
+
+  Future<void> start() async {
+    _stopping = false;
+    await _startOnce();
+  }
+
+  Future<void> stop() async {
+    _stopping = true;
+    await _killProcessTree();
+    _proc = null;
+  }
+
+  Future<void> _startOnce() async {
+    if (_stopping) return;
+
+    final proxyExe = p.join(exeDir, 'proxy', 'proxy.exe');
+
+    // Prefer passing args separately (NOT embedded in the path).
+    final args = <String>['--port', '$port', '--req-insecure'];
+
+    final workDir = p.join(exeDir, 'proxy');
+
+    try {
+      _proc = await Process.start(
+        proxyExe,
+        args,
+        workingDirectory: workDir,
+        environment: {
+          'PORT': '$port',
+          'TARGET': 'http://localhost',
+          ...Platform.environment,
+        },
+        runInShell: true,
+      );
+
+      _restartCount = 0;
+
+      unawaited(_watchExit(_proc!));
+    } catch (e) {
+      await _scheduleRestart(reason: 'spawn failed: $e');
+    }
+  }
+
+  Future<void> _watchExit(Process proc) async {
+    final code = await proc.exitCode;
+
+    if (_stopping) return;
+
+    if (!identical(_proc, proc)) return;
+
+    await _scheduleRestart(reason: 'process exited with code $code');
+  }
+
+  Future<void> _scheduleRestart({required String reason}) async {
+    if (_stopping) return;
+
+    _restartCount++;
+
+    final delayMs = [
+      250,
+      500,
+      1000,
+      2000,
+      3000,
+    ][(_restartCount - 1).clamp(0, 4)];
+
+    await Future.delayed(Duration(milliseconds: delayMs));
+
+    await _killProcessTree();
+    _proc = null;
+
+    print("restarting");
+
+    await _startOnce();
+  }
+
+  Future<void> _killProcessTree() async {
+    final proc = _proc;
+    if (proc == null) return;
+
+    if (Platform.isWindows) {
+      try {
+        await Process.run('taskkill', [
+          '/PID',
+          '${proc.pid}',
+          '/T',
+          '/F',
+        ], runInShell: true);
+      } catch (_) {
+        try {
+          proc.kill(ProcessSignal.sigkill);
+        } catch (_) {}
+      }
+    } else {
+      try {
+        proc.kill(ProcessSignal.sigkill);
+      } catch (_) {}
+    }
+  }
 }
