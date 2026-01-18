@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -355,17 +356,45 @@ extension ThemeContext on BuildContext {
 }
 
 class ProxySupervisor {
-  ProxySupervisor({required this.exeDir, this.port = 8523});
+  ProxySupervisor({
+    required this.exeDir,
+    this.port = 8523,
+    this.verbosity = 3,
+    this.rapidExitThreshold = const Duration(seconds: 2),
+    this.maxRapidExits = 5,
+  });
 
   final String exeDir;
   final int port;
+  final int verbosity;
+
+  /// If the process exits quicker than this, we consider it a "rapid crash".
+  final Duration rapidExitThreshold;
+
+  /// After this many rapid crashes, we stop restarting.
+  final int maxRapidExits;
 
   Process? _proc;
   bool _stopping = false;
+  bool _disabled = false;
+
   int _restartCount = 0;
+  int _rapidExitCount = 0;
+
+  DateTime? _lastStartAt;
+
+  IOSink? _logSink;
+  String? _logPath;
 
   Future<void> start() async {
     _stopping = false;
+    _disabled = false;
+
+    // Per-run log file
+    final ts = DateTime.now().toIso8601String().replaceAll(':', '-');
+    _logPath ??= p.join(exeDir, 'proxy', 'proxy$ts.log');
+    _logSink ??= File(_logPath!).openWrite(mode: FileMode.append);
+
     await _startOnce();
   }
 
@@ -373,20 +402,35 @@ class ProxySupervisor {
     _stopping = true;
     await _killProcessTree();
     _proc = null;
+
+    await _logSink?.flush();
+    await _logSink?.close();
+    _logSink = null;
   }
 
   Future<void> _startOnce() async {
-    if (_stopping) return;
+    if (_stopping || _disabled) return;
+
+    // Skip start if port already taken
+    if (await _isPortListening(port)) {
+      _writeLog('--- NOT starting: port $port is already LISTENING ---');
+      _disabled = true; // prevents restart-loop
+      return;
+    }
 
     final proxyExe = p.join(exeDir, 'proxy', 'proxy.exe');
-
-    // Prefer passing args separately (NOT embedded in the path).
-    final args = <String>['--port', '$port', '--req-insecure'];
-
     final workDir = p.join(exeDir, 'proxy');
 
+    final args = <String>[
+      '-v',
+      '$verbosity',
+      '--port',
+      '$port',
+      '--req-insecure',
+    ];
+
     try {
-      _proc = await Process.start(
+      final proc = await Process.start(
         proxyExe,
         args,
         workingDirectory: workDir,
@@ -395,13 +439,23 @@ class ProxySupervisor {
           'TARGET': 'http://localhost',
           ...Platform.environment,
         },
-        runInShell: true,
+        runInShell: false,
       );
 
+      _proc = proc;
+      _lastStartAt = DateTime.now();
       _restartCount = 0;
 
-      unawaited(_watchExit(_proc!));
+      _writeLog(
+        '--- started proxy.exe pid=${proc.pid} args=${args.join(" ")} ---',
+      );
+
+      _pipeToLog(proc.stdout, streamName: 'stdout', pid: proc.pid);
+      _pipeToLog(proc.stderr, streamName: 'stderr', pid: proc.pid);
+
+      unawaited(_watchExit(proc));
     } catch (e) {
+      _writeLog('--- spawn failed: $e ---');
       await _scheduleRestart(reason: 'spawn failed: $e');
     }
   }
@@ -409,18 +463,57 @@ class ProxySupervisor {
   Future<void> _watchExit(Process proc) async {
     final code = await proc.exitCode;
 
-    if (_stopping) return;
-
+    if (_stopping || _disabled) return;
     if (!identical(_proc, proc)) return;
+
+    final startedAt = _lastStartAt;
+    final ranFor = (startedAt == null)
+        ? null
+        : DateTime.now().difference(startedAt);
+
+    _writeLog(
+      '--- proxy.exe pid=${proc.pid} exited with code $code (ranFor=${ranFor ?? "unknown"}) ---',
+    );
+
+    // If port is now taken, do not restart.
+    if (await _isPortListening(port)) {
+      _writeLog('--- NOT restarting: port $port is LISTENING ---');
+      _disabled = true;
+      return;
+    }
+
+    // Circuit breaker: too many rapid exits => stop restarting.
+    final isRapid = (ranFor != null && ranFor < rapidExitThreshold);
+    if (isRapid) {
+      _rapidExitCount++;
+      _writeLog(
+        '--- rapid exit $_rapidExitCount/$maxRapidExits (threshold=${rapidExitThreshold.inSeconds}s) ---',
+      );
+
+      if (_rapidExitCount >= maxRapidExits) {
+        _writeLog('--- DISABLING restarts: too many rapid crashes ---');
+        _disabled = true;
+        return;
+      }
+    } else {
+      // If it stayed up long enough, reset rapid crash counter.
+      _rapidExitCount = 0;
+    }
 
     await _scheduleRestart(reason: 'process exited with code $code');
   }
 
   Future<void> _scheduleRestart({required String reason}) async {
-    if (_stopping) return;
+    if (_stopping || _disabled) return;
+
+    // (still) skip if port taken
+    if (await _isPortListening(port)) {
+      _writeLog('--- NOT restarting: port $port is LISTENING ($reason) ---');
+      _disabled = true;
+      return;
+    }
 
     _restartCount++;
-
     final delayMs = [
       250,
       500,
@@ -429,14 +522,57 @@ class ProxySupervisor {
       3000,
     ][(_restartCount - 1).clamp(0, 4)];
 
+    _writeLog('--- restarting in ${delayMs}ms: $reason ---');
     await Future.delayed(Duration(milliseconds: delayMs));
+
+    if (_stopping || _disabled) return;
 
     await _killProcessTree();
     _proc = null;
 
-    print("restarting");
-
     await _startOnce();
+  }
+
+  void _pipeToLog(
+    Stream<List<int>> stream, {
+    required String streamName,
+    required int pid,
+  }) {
+    stream
+        .transform(utf8.decoder)
+        .transform(const LineSplitter())
+        .listen(
+          (line) => _writeLog('[$streamName pid=$pid] $line'),
+          onError: (e) =>
+              _writeLog('[$streamName pid=$pid] <stream error: $e>'),
+        );
+  }
+
+  void _writeLog(String line) {
+    final ts = DateTime.now().toIso8601String();
+    _logSink?.writeln('[$ts] $line');
+  }
+
+  /// Windows: netstat LISTENING check.
+  /// Non-Windows: try bind to detect use.
+  Future<bool> _isPortListening(int port) async {
+    if (Platform.isWindows) {
+      final res = await Process.run('cmd', [
+        '/c',
+        'netstat -ano -p TCP | findstr "LISTENING" | findstr ":$port"',
+      ], runInShell: true);
+
+      final out = (res.stdout ?? '').toString().trim();
+      return out.isNotEmpty;
+    } else {
+      try {
+        final s = await ServerSocket.bind(InternetAddress.loopbackIPv4, port);
+        await s.close();
+        return false;
+      } catch (_) {
+        return true;
+      }
+    }
   }
 
   Future<void> _killProcessTree() async {
