@@ -18,12 +18,12 @@ void main() async {
   if (Platform.isWindows) {
     final exeDir = File(Platform.resolvedExecutable).parent.path;
 
-    final supervisor = ProxySupervisor(exeDir: exeDir, port: 8523);
-    await supervisor.start();
+    supervisor = ProxySupervisor(exeDir: exeDir, port: 8523);
+    await supervisor!.start();
 
     final lifecycleHandler = AppLifecycleHandler(
       onExit: () async {
-        await supervisor.stop();
+        await supervisor!.stop();
       },
     );
 
@@ -32,6 +32,8 @@ void main() async {
 
   runApp(const IPTVApp());
 }
+
+ProxySupervisor? supervisor;
 
 class AppLifecycleHandler extends WidgetsBindingObserver {
   final Future<void> Function() onExit;
@@ -361,8 +363,6 @@ class ProxySupervisor {
     this.port = 8523,
     this.verbosity = 3,
     this.maxLogFiles = 5,
-    this.rapidExitThreshold = const Duration(seconds: 2),
-    this.maxRapidExits = 5,
   });
 
   final String exeDir;
@@ -370,45 +370,57 @@ class ProxySupervisor {
   final int verbosity;
 
   final int maxLogFiles;
-  final Duration rapidExitThreshold;
-  final int maxRapidExits;
 
   Process? _proc;
-
-  bool _stopping = false;
-  bool _disabled = false;
-
-  int _restartCount = 0;
-  int _rapidExitCount = 0;
-
-  DateTime? _lastStartAt;
 
   IOSink? _logSink;
   String? _logPath;
 
+  bool _starting = false;
+  Future<void>? _startFuture;
+
+  /// Call from anywhere.
+  /// If proxy is already running (or port is already listening), returns immediately.
+  /// Otherwise starts it (awaits) exactly once (no races).
+  Future<void> ensureStarted() async {
+    // Fast-path: if our process handle exists & is alive, we’re good.
+    if (await _isOurProcessAlive()) return;
+
+    // If something (maybe not us) is already listening on the port, treat as "running".
+    // (You can decide if you prefer to kill & replace, but your requirement says
+    // only kill-on-startup. So here we just return.)
+    if (await _isPortListening(port)) return;
+
+    // Serialize concurrent callers:
+    final existing = _startFuture;
+    if (existing != null) return existing;
+
+    final fut = _ensureStartedInternal();
+    _startFuture = fut;
+    try {
+      await fut;
+    } finally {
+      _startFuture = null;
+    }
+  }
+
+  /// Optional: call this once at app startup if you want.
+  /// It prunes logs, opens the log file, kills port occupier (Windows), then starts.
   Future<void> start() async {
-    _stopping = false;
-    _disabled = false;
+    await _initLoggingIfNeeded();
 
-    await _pruneOldLogs(keep: maxLogFiles);
+    _writeLog('--- start() requested (port=$port, verbosity=$verbosity) ---');
 
-    // Per-run log file (safe for filenames)
-    final ts = DateTime.now().toIso8601String().replaceAll(':', '-');
-    _logPath = p.join(exeDir, 'proxy', 'proxy$ts.log');
-    _logSink = File(_logPath!).openWrite(mode: FileMode.append);
-
-    _writeLog(
-      '--- ProxySupervisor start (port=$port, verbosity=$verbosity) ---',
-    );
+    if (Platform.isWindows) {
+      // Your requirement: if the port is taken by another process, end it.
+      await _killPortOccupierIfAny(port);
+    }
 
     await _startOnce();
   }
 
   Future<void> stop() async {
-    _writeLog('--- ProxySupervisor stop requested ---');
-    _stopping = true;
-    _disabled = true;
-
+    _writeLog('--- stop() requested ---');
     await _killProcessTree();
     _proc = null;
 
@@ -417,13 +429,42 @@ class ProxySupervisor {
     _logSink = null;
   }
 
-  Future<void> _startOnce() async {
-    if (_stopping || _disabled) return;
+  // ---------------- Internal ----------------
 
-    // Skip starting if port already taken.
+  Future<void> _ensureStartedInternal() async {
+    // If someone started it between checks, no-op.
+    if (await _isOurProcessAlive()) return;
+    if (await _isPortListening(port)) return;
+
+    // This path might be called without start(), so ensure logging exists.
+    await _initLoggingIfNeeded();
+
+    // IMPORTANT: per your requirement “kill occupier on startup”.
+    // If you mean “any time we attempt to start”, keep this here.
+    // If you mean “only once at app launch”, move this call into your app’s startup flow.
+    if (Platform.isWindows) {
+      await _killPortOccupierIfAny(port);
+    }
+
+    await _startOnce();
+  }
+
+  Future<void> _initLoggingIfNeeded() async {
+    if (_logSink != null) return;
+
+    await _pruneOldLogs(keep: maxLogFiles);
+
+    final ts = DateTime.now().toIso8601String().replaceAll(':', '-');
+    _logPath = p.join(exeDir, 'proxy', 'proxy$ts.log');
+    _logSink = File(_logPath!).openWrite(mode: FileMode.append);
+
+    _writeLog('--- logging initialized ---');
+  }
+
+  Future<void> _startOnce() async {
+    // Final guard: if port is already taken, do NOT start.
     if (await _isPortListening(port)) {
       _writeLog('--- NOT starting: port $port is already LISTENING ---');
-      _disabled = true; // prevent restart loops
       return;
     }
 
@@ -452,8 +493,6 @@ class ProxySupervisor {
       );
 
       _proc = proc;
-      _lastStartAt = DateTime.now();
-      _restartCount = 0;
 
       _writeLog(
         '--- started proxy.exe pid=${proc.pid} args=${args.join(" ")} ---',
@@ -462,90 +501,18 @@ class ProxySupervisor {
       _pipeToLog(proc.stdout, streamName: 'stdout', pid: proc.pid);
       _pipeToLog(proc.stderr, streamName: 'stderr', pid: proc.pid);
 
-      unawaited(_watchExit(proc));
+      // No auto-restart. We only observe exit for logging.
+      unawaited(() async {
+        final code = await proc.exitCode;
+        _writeLog('--- proxy.exe pid=${proc.pid} exited code=$code ---');
+        if (identical(_proc, proc)) {
+          _proc = null; // allow future ensureStarted() to restart it
+        }
+      }());
     } catch (e) {
       _writeLog('--- spawn failed: $e ---');
-      await _scheduleRestart(reason: 'spawn failed: $e');
+      rethrow;
     }
-  }
-
-  Future<void> _watchExit(Process proc) async {
-    final code = await proc.exitCode;
-
-    if (_stopping || _disabled) return;
-    if (!identical(_proc, proc)) return;
-
-    final startedAt = _lastStartAt;
-    final ranFor = startedAt == null
-        ? null
-        : DateTime.now().difference(startedAt);
-
-    _writeLog(
-      '--- proxy.exe pid=${proc.pid} exited code=$code ranFor=${ranFor ?? "unknown"} ---',
-    );
-
-    // If port is now taken, do not restart.
-    if (await _isPortListening(port)) {
-      _writeLog('--- NOT restarting: port $port is LISTENING ---');
-      _disabled = true;
-      return;
-    }
-
-    // Circuit breaker: too many rapid exits.
-    final isRapid = ranFor != null && ranFor < rapidExitThreshold;
-    if (isRapid) {
-      _rapidExitCount++;
-      _writeLog(
-        '--- rapid exit $_rapidExitCount/$maxRapidExits '
-        '(threshold=${rapidExitThreshold.inMilliseconds}ms) ---',
-      );
-      if (_rapidExitCount >= maxRapidExits) {
-        _writeLog('--- DISABLING restarts: too many rapid crashes ---');
-        _disabled = true;
-        return;
-      }
-    } else {
-      _rapidExitCount = 0;
-    }
-
-    await _scheduleRestart(reason: 'process exited with code $code');
-  }
-
-  Future<void> _scheduleRestart({required String reason}) async {
-    if (_stopping || _disabled) return;
-
-    // Avoid restart loops if port gets taken.
-    if (await _isPortListening(port)) {
-      _writeLog('--- NOT restarting: port $port is LISTENING ($reason) ---');
-      _disabled = true;
-      return;
-    }
-
-    _restartCount++;
-    final delayMs = [
-      250,
-      500,
-      1000,
-      2000,
-      3000,
-    ][(_restartCount - 1).clamp(0, 4)];
-
-    _writeLog('--- restarting in ${delayMs}ms: $reason ---');
-    await Future.delayed(Duration(milliseconds: delayMs));
-
-    if (_stopping || _disabled) return;
-
-    // Check again after waiting.
-    if (await _isPortListening(port)) {
-      _writeLog('--- NOT restarting after delay: port $port is LISTENING ---');
-      _disabled = true;
-      return;
-    }
-
-    await _killProcessTree();
-    _proc = null;
-
-    await _startOnce();
   }
 
   void _pipeToLog(
@@ -566,42 +533,29 @@ class ProxySupervisor {
   void _writeLog(String line) {
     final ts = DateTime.now().toIso8601String();
     _logSink?.writeln('[$ts] $line');
-    // If you also want console output, uncomment:
-    // print('[$ts] $line');
   }
 
-  /// Keeps only the newest [keep] proxy*.log files in exeDir/proxy.
-  /// Deletes the oldest ones at startup (before opening the new log).
-  Future<void> _pruneOldLogs({required int keep}) async {
-    if (keep <= 0) return;
+  /// True if _proc exists and hasn’t exited.
+  Future<bool> _isOurProcessAlive() async {
+    final proc = _proc;
+    if (proc == null) return false;
 
-    final dir = Directory(p.join(exeDir, 'proxy'));
-    if (!await dir.exists()) return;
-
-    final files = <File>[];
-    await for (final ent in dir.list(followLinks: false)) {
-      if (ent is! File) continue;
-      final name = p.basename(ent.path);
-      if (!name.startsWith('proxy') || p.extension(name) != '.log') continue;
-      files.add(ent);
-    }
-
-    if (files.length < keep) return;
-
-    files.sort((a, b) => a.lastModifiedSync().compareTo(b.lastModifiedSync()));
-
-    // We want to end up with (keep - 1) old files, then we create the new one => keep total.
-    final toDelete = files.length - (keep - 1);
-    for (int i = 0; i < toDelete; i++) {
-      try {
-        await files[i].delete();
-      } catch (_) {
-        // ignore failures (file locked, permissions, etc.)
-      }
+    // If exitCode completes immediately, it exited already.
+    // Use a zero-timeout to probe without waiting.
+    try {
+      final code = await proc.exitCode.timeout(Duration.zero);
+      _writeLog(
+        '--- cached process pid=${proc.pid} already exited code=$code ---',
+      );
+      _proc = null;
+      return false;
+    } catch (_) {
+      // timeout => still running
+      return true;
     }
   }
 
-  /// Windows: netstat LISTENING check.
+  /// Windows: check LISTENING
   /// Non-Windows: bind check.
   Future<bool> _isPortListening(int port) async {
     if (Platform.isWindows) {
@@ -620,6 +574,89 @@ class ProxySupervisor {
       } catch (_) {
         return true;
       }
+    }
+  }
+
+  /// WINDOWS ONLY:
+  /// Finds PIDs listening on :port and kills them (taskkill /F).
+  /// Note: netstat output can contain multiple PIDs; we kill them all.
+  Future<void> _killPortOccupierIfAny(int port) async {
+    if (!Platform.isWindows) return;
+
+    // netstat lines look like:
+    // TCP    0.0.0.0:8523    0.0.0.0:0    LISTENING    1234
+    final res = await Process.run('cmd', [
+      '/c',
+      'netstat -ano -p TCP | findstr "LISTENING" | findstr ":$port"',
+    ], runInShell: true);
+
+    final out = (res.stdout ?? '').toString();
+    final lines = out
+        .split(RegExp(r'\r?\n'))
+        .map((l) => l.trim())
+        .where((l) => l.isNotEmpty)
+        .toList();
+
+    if (lines.isEmpty) {
+      _writeLog('--- no port occupier found for :$port ---');
+      return;
+    }
+
+    final pids = <int>{};
+    for (final line in lines) {
+      final parts = line.split(RegExp(r'\s+'));
+      if (parts.isEmpty) continue;
+      final pidStr = parts.last;
+      final pid = int.tryParse(pidStr);
+      if (pid != null && pid > 0) {
+        // Don’t kill our own cached process if it matches
+        if (_proc?.pid == pid) continue;
+        pids.add(pid);
+      }
+    }
+
+    if (pids.isEmpty) return;
+
+    for (final pid in pids) {
+      _writeLog('--- killing port occupier pid=$pid on :$port ---');
+      try {
+        await Process.run('taskkill', [
+          '/PID',
+          '$pid',
+          '/T',
+          '/F',
+        ], runInShell: true);
+      } catch (e) {
+        _writeLog('--- failed taskkill pid=$pid: $e ---');
+      }
+    }
+  }
+
+  /// Keeps only the newest [keep] proxy*.log files in exeDir/proxy.
+  Future<void> _pruneOldLogs({required int keep}) async {
+    if (keep <= 0) return;
+
+    final dir = Directory(p.join(exeDir, 'proxy'));
+    if (!await dir.exists()) return;
+
+    final files = <File>[];
+    await for (final ent in dir.list(followLinks: false)) {
+      if (ent is! File) continue;
+      final name = p.basename(ent.path);
+      if (!name.startsWith('proxy') || p.extension(name) != '.log') continue;
+      files.add(ent);
+    }
+
+    if (files.length < keep) return;
+
+    files.sort((a, b) => a.lastModifiedSync().compareTo(b.lastModifiedSync()));
+
+    // keep - 1 old + new file = keep total
+    final toDelete = files.length - (keep - 1);
+    for (int i = 0; i < toDelete; i++) {
+      try {
+        await files[i].delete();
+      } catch (_) {}
     }
   }
 

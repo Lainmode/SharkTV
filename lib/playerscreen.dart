@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:fullscreen_window/fullscreen_window.dart';
 import 'package:outlined_text/outlined_text.dart';
 import 'package:sharktv_flutter/helpers/data.dart';
+import 'package:sharktv_flutter/main.dart';
 import 'package:video_view/video_view.dart';
 
 class PlayerScreen extends StatefulWidget {
@@ -83,8 +84,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
     setState(() => _menuOpen = !_menuOpen);
   }
 
-  void _playChannel(Channel ch) {
+  void _playChannel(Channel ch) async {
     _showUiAndScheduleHide();
+    await supervisor!.ensureStarted();
     setState(() {
       error = null;
       currentChannel = ch;
