@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:fullscreen_window/fullscreen_window.dart';
 import 'package:outlined_text/outlined_text.dart';
@@ -86,7 +87,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   void _playChannel(Channel ch) async {
     _showUiAndScheduleHide();
-    await supervisor!.ensureStarted();
+    try {
+      if (!kIsWeb && Platform.isWindows) await supervisor!.ensureStarted();
+    } catch (e) {}
     setState(() {
       error = null;
       currentChannel = ch;
@@ -94,7 +97,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
     var extension = ch.url.substring(ch.url.lastIndexOf('.'));
 
     String url;
-    if (!Platform.isWindows || extension == ".mpd") {
+    if (kIsWeb || !Platform.isWindows || extension == ".mpd") {
       url = ch.url;
     } else {
       // build headers map

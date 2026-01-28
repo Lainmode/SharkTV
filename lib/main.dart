@@ -15,20 +15,22 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   MediaKit.ensureInitialized();
 
-  if (Platform.isWindows) {
-    final exeDir = File(Platform.resolvedExecutable).parent.path;
+  try {
+    if (!kIsWeb && Platform.isWindows) {
+      final exeDir = File(Platform.resolvedExecutable).parent.path;
 
-    supervisor = ProxySupervisor(exeDir: exeDir, port: 8523);
-    await supervisor!.start();
+      supervisor = ProxySupervisor(exeDir: exeDir, port: 8523);
+      await supervisor!.start();
 
-    final lifecycleHandler = AppLifecycleHandler(
-      onExit: () async {
-        await supervisor!.stop();
-      },
-    );
+      final lifecycleHandler = AppLifecycleHandler(
+        onExit: () async {
+          await supervisor!.stop();
+        },
+      );
 
-    WidgetsBinding.instance.addObserver(lifecycleHandler);
-  }
+      WidgetsBinding.instance.addObserver(lifecycleHandler);
+    }
+  } catch (e) {}
 
   runApp(const IPTVApp());
 }
@@ -558,7 +560,7 @@ class ProxySupervisor {
   /// Windows: check LISTENING
   /// Non-Windows: bind check.
   Future<bool> _isPortListening(int port) async {
-    if (Platform.isWindows) {
+    if (!kIsWeb && Platform.isWindows) {
       final res = await Process.run('cmd', [
         '/c',
         'netstat -ano -p TCP | findstr "LISTENING" | findstr ":$port"',
@@ -581,7 +583,7 @@ class ProxySupervisor {
   /// Finds PIDs listening on :port and kills them (taskkill /F).
   /// Note: netstat output can contain multiple PIDs; we kill them all.
   Future<void> _killPortOccupierIfAny(int port) async {
-    if (!Platform.isWindows) return;
+    if (kIsWeb || !Platform.isWindows) return;
 
     // netstat lines look like:
     // TCP    0.0.0.0:8523    0.0.0.0:0    LISTENING    1234
@@ -664,7 +666,7 @@ class ProxySupervisor {
     final proc = _proc;
     if (proc == null) return;
 
-    if (Platform.isWindows) {
+    if (!kIsWeb && Platform.isWindows) {
       try {
         await Process.run('taskkill', [
           '/PID',
