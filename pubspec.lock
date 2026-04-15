@@ -881,10 +881,10 @@ packages:
     dependency: "direct main"
     description:
       name: video_view
-      sha256: "41c9492f2578f89ec426967354ce3f53313db8a8d333fef4b1078f5b168329e9"
+      sha256: "2000187cc212ceda4e723d95ba6d24c6ccec41f2a2de63ecf20fa51dc7737b3b"
       url: "https://pub.dev"
     source: hosted
-    version: "1.2.8"
+    version: "1.2.10"
   vm_service:
     dependency: transitive
     description:

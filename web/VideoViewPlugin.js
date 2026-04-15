@@ -4,29 +4,29 @@
  * Copyright 2025 Xiao Shen.
  * Licensed under BSD 2-Clause.
  */
-if (typeof VideoViewPlugin !== "function") {
+if (typeof VideoViewPlugin !== 'function') {
 	class VideoViewPlugin {
-		static version = "1.2.8";
-		static #isApple = navigator.vendor.startsWith("Apple");
-		static #hasMSE = typeof ManagedMediaSource === "function" || (typeof MediaSource === "function" && typeof MediaSource.isTypeSupported === "function");
+		static version = '1.2.10';
+		static #isApple = navigator.vendor.startsWith('Apple');
+		static #hasMSE = typeof ManagedMediaSource === 'function' || typeof MediaSource === 'function' && typeof MediaSource.isTypeSupported === 'function';
 		static #nextId = 0;
+		static #shakaPolyfilled = false;
 		static #unmuteOption = {
 			capture: true,
-			passive: true,
+			passive: true
 		};
 
 		/** @type {WakeLockSentinel | Promise<WakeLockSentinel> | null} */
-		static #wakeLock =
-			document.addEventListener("visibilitychange", async () => {
-				if (document.visibilityState === "visible") {
-					while (this.#wakeLock instanceof Promise) {
-						await this.#wakeLock;
-					}
-					if (this.#wakeLockRefs.size > 0) {
-						this.#lockScreen();
-					}
+		static #wakeLock = document.addEventListener('visibilitychange', async () => {
+			if (document.visibilityState === 'visible') {
+				while (this.#wakeLock instanceof Promise) {
+					await this.#wakeLock;
 				}
-			}) ?? null;
+				if (this.#wakeLockRefs.size > 0) {
+					this.#lockScreen();
+				}
+			}
+		}) ?? null;
 
 		/** @type {Set<number>} */
 		static #wakeLockRefs = new Set();
@@ -35,20 +35,20 @@ if (typeof VideoViewPlugin !== "function") {
 		static #instances = new Map();
 
 		/** @param {TextTrack} track */
-		static #isSubtitle = (track) => ["subtitles", "captions", "forced"].includes(track.kind);
+		static #isSubtitle = track => ['subtitles', 'captions', 'forced'].includes(track.kind);
 
 		/** @param {number} id */
-		static getInstance = (id) => this.#instances.get(id);
+		static getInstance = id => this.#instances.get(id);
 
 		/**
-		 * @param {number} id
+		 * @param {number} id 
 		 * @param {boolean} enable
 		 */
 		static #requestWakeLock = async (id, enable) => {
 			while (this.#wakeLock instanceof Promise) {
 				await this.#wakeLock;
 			}
-			if ((enable && !this.#wakeLockRefs.has(id)) || (!enable && this.#wakeLockRefs.has(id))) {
+			if (enable && !this.#wakeLockRefs.has(id) || !enable && this.#wakeLockRefs.has(id)) {
 				if (enable) {
 					this.#wakeLockRefs.add(id);
 					this.#lockScreen();
@@ -62,9 +62,9 @@ if (typeof VideoViewPlugin !== "function") {
 		static #lockScreen = async () => {
 			if (!this.#wakeLock) {
 				try {
-					this.#wakeLock = navigator.wakeLock.request("screen");
+					this.#wakeLock = navigator.wakeLock.request('screen');
 					const wakeLock = await this.#wakeLock;
-					wakeLock.addEventListener("release", () => {
+					wakeLock.addEventListener('release', () => {
 						if (this.#wakeLock === wakeLock) {
 							this.#wakeLock = null;
 						}
@@ -80,13 +80,13 @@ if (typeof VideoViewPlugin !== "function") {
 		 * @param {TextTrackList|AudioTrackList} trackList
 		 * @param {number} i
 		 */
-		static #getTrackId = (trackList, i) => (trackList[i].id ? +trackList[i].id : i);
+		static #getTrackId = (trackList, i) => trackList[i].id ? +trackList[i].id : i;
 
 		/**
 		 * @param {Map<number, string[]>} langs
 		 * @returns {number}
 		 */
-		static #getBestMatch = (langs) => {
+		static #getBestMatch = langs => {
 			if (langs.size === 0) {
 				return -1;
 			} else if (langs.size === 1) {
@@ -106,7 +106,7 @@ if (typeof VideoViewPlugin !== "function") {
 
 		/**
 		 * @param {string[]} langArr
-		 * @param {Map<number, string[]>} langs
+		 * @param {Map<number, string[]>} langs 
 		 */
 		static #getBestMatchByLanguage = (langArr, langs) => {
 			if (langs.size === 0) {
@@ -138,8 +138,8 @@ if (typeof VideoViewPlugin !== "function") {
 		#volume = 1;
 		#speed = 1;
 		#playTime = 0;
-		#preferredAudioLanguage = "";
-		#preferredSubtitleLanguage = "";
+		#preferredAudioLanguage = '';
+		#preferredSubtitleLanguage = '';
 		#maxBitrate = Infinity;
 		#maxVideoWidth = Infinity;
 		#maxVideoHeight = Infinity;
@@ -148,7 +148,7 @@ if (typeof VideoViewPlugin !== "function") {
 		#showSubtitle = false;
 		#streaming = false;
 		#seeking = false;
-		#source = "";
+		#source = '';
 		#position = 0;
 		#bufferPosition = 0;
 		#subtitleOnChange = 0;
@@ -157,7 +157,7 @@ if (typeof VideoViewPlugin !== "function") {
 		#hasVideo = false;
 		#keepScreenOn = false;
 
-		/**
+		/** 
 		 * 0: idle, 1: opening, 2: ready, 3: playing
 		 * @type {0|1|2|3}
 		 */
@@ -178,49 +178,55 @@ if (typeof VideoViewPlugin !== "function") {
 		/** @type {ResizeObserver?} */
 		#observer = null;
 
-		#onresize = () => (this.#dom.style.objectFit = this.#dom.videoWidth / this.#dom.videoHeight > this.#dom.width / this.#dom.height ? (this.#fitWidth ? "contain" : "cover") : this.#fitWidth ? "cover" : "contain");
+		#onresize = () => this.#dom.style.objectFit = this.#dom.videoWidth / this.#dom.videoHeight > this.#dom.width / this.#dom.height
+			? this.#fitWidth ? 'contain' : 'cover'
+			: this.#fitWidth ? 'cover' : 'contain';
 
 		#unmute = () => {
 			if (this.#dom.muted) {
 				this.#dom.muted = false;
-				removeEventListener("keydown", this.#unmute, VideoViewPlugin.#unmuteOption);
-				removeEventListener("keyup", this.#unmute, VideoViewPlugin.#unmuteOption);
-				removeEventListener("mousedown", this.#unmute, VideoViewPlugin.#unmuteOption);
-				removeEventListener("mouseup", this.#unmute, VideoViewPlugin.#unmuteOption);
-				removeEventListener("touchstart", this.#unmute, VideoViewPlugin.#unmuteOption);
-				removeEventListener("touchend", this.#unmute, VideoViewPlugin.#unmuteOption);
-				removeEventListener("touchmove", this.#unmute, VideoViewPlugin.#unmuteOption);
+				removeEventListener('keydown', this.#unmute, VideoViewPlugin.#unmuteOption);
+				removeEventListener('keyup', this.#unmute, VideoViewPlugin.#unmuteOption);
+				removeEventListener('mousedown', this.#unmute, VideoViewPlugin.#unmuteOption);
+				removeEventListener('mouseup', this.#unmute, VideoViewPlugin.#unmuteOption);
+				removeEventListener('touchstart', this.#unmute, VideoViewPlugin.#unmuteOption);
+				removeEventListener('touchend', this.#unmute, VideoViewPlugin.#unmuteOption);
+				removeEventListener('touchmove', this.#unmute, VideoViewPlugin.#unmuteOption);
 			}
 		};
 
 		/** @param {Event} e */
-		#displayModeChange = (e) => {
+		#displayModeChange = e => {
 			if (e.target === this.#dom) {
-				this.#sendDisplayMode(document.fullscreenElement === this.#dom ? 1 : document.pictureInPictureElement === this.#dom ? 2 : 0);
+				this.#sendDisplayMode(document.fullscreenElement === this.#dom ? 1
+					: document.pictureInPictureElement === this.#dom ? 2
+						: 0);
 			}
 		};
 
 		/** @param {0|1|2} mode */
-		#sendDisplayMode = (mode) => {
+		#sendDisplayMode = mode => {
 			if (mode === 1) {
-				this.#dom.style.pointerEvents = "auto";
+				this.#dom.style.pointerEvents = 'auto';
 				this.#dom.controls = true;
 			} else {
-				this.#dom.style.pointerEvents = "none";
+				this.#dom.style.pointerEvents = 'none';
 				this.#dom.controls = false;
 			}
 			this.#sendMessage({
-				event: "displayMode",
-				value: mode,
+				event: 'displayMode',
+				value: mode
 			});
 		};
 
 		/** @param {string} lang */
-		#getDefaultAudioTrack = (lang) => {
+		#getDefaultAudioTrack = lang => {
 			const tracks = this.#shaka ? this.#shaka.getAudioTracks() : this.#dom.audioTracks;
 			if (tracks && tracks.length) {
-				const langs = new Map(this.#shaka ? tracks.map((v, i) => [i, v.language ? v.language.split("-") : []]) : Array.prototype.map.call(tracks, (v, i) => [v.id ? +v.id : i, v.language.split("-")]));
-				let j = lang ? VideoViewPlugin.#getBestMatchByLanguage(lang.split("-"), langs) : -1;
+				const langs = new Map(this.#shaka
+					? tracks.map((v, i) => [i, v.language ? v.language.split('-') : []])
+					: Array.prototype.map.call(tracks, (v, i) => [v.id ? +v.id : i, v.language.split('-')]));
+				let j = lang ? VideoViewPlugin.#getBestMatchByLanguage(lang.split('-'), langs) : -1;
 				if (j < 0) {
 					if (this.#shaka) {
 						j = 0;
@@ -231,7 +237,7 @@ if (typeof VideoViewPlugin !== "function") {
 						}
 					} else {
 						for (let i = 0; i < tracks.length; i++) {
-							if (j < 0 || tracks[i].kind === "main") {
+							if (j < 0 || tracks[i].kind === 'main') {
 								j = VideoViewPlugin.#getTrackId(tracks, i);
 							}
 						}
@@ -243,10 +249,13 @@ if (typeof VideoViewPlugin !== "function") {
 		};
 
 		/** @param {string} lang */
-		#getDefaultSubtitleTrack = (lang) => {
-			const langs = new Map(Array.prototype.map.call(this.#dom.textTracks, (v, i) => (VideoViewPlugin.#isSubtitle(v) ? [v.id ? +v.id : i, v.language.split("-")] : null)).filter((v) => v));
+		#getDefaultSubtitleTrack = lang => {
+			const langs = new Map(Array.prototype.map.call(
+				this.#dom.textTracks,
+				(v, i) => VideoViewPlugin.#isSubtitle(v) ? [v.id ? +v.id : i, v.language.split('-')] : null
+			).filter(v => v));
 			if (langs.size) {
-				let j = lang ? VideoViewPlugin.#getBestMatchByLanguage(lang.split("-"), langs) : -1;
+				let j = lang ? VideoViewPlugin.#getBestMatchByLanguage(lang.split('-'), langs) : -1;
 				if (j < 0) {
 					j = langs.keys().next().value;
 				}
@@ -264,31 +273,29 @@ if (typeof VideoViewPlugin !== "function") {
 				}
 			}
 			this.#sendMessage({
-				event: "videoSize",
+				event: 'videoSize',
 				width: this.#dom.videoWidth,
-				height: this.#dom.videoHeight,
+				height: this.#dom.videoHeight
 			});
 		};
 
-		#sendPosition = () =>
-			this.#sendMessage({
-				event: "position",
-				value: (this.#dom.currentTime * 1000) | 0,
-			});
+		#sendPosition = () => this.#sendMessage({
+			event: 'position',
+			value: this.#dom.currentTime * 1000 | 0
+		});
 
-		#sendBuffer = () =>
-			this.#sendMessage({
-				event: "buffer",
-				start: (this.#dom.currentTime * 1000) | 0,
-				end: (this.#bufferPosition * 1000) | 0,
-			});
+		#sendBuffer = () => this.#sendMessage({
+			event: 'buffer',
+			start: this.#dom.currentTime * 1000 | 0,
+			end: this.#bufferPosition * 1000 | 0
+		});
 
 		/** @param {string} msg */
-		#sendError = (msg) => {
+		#sendError = msg => {
 			this.#close();
 			this.#sendMessage({
-				event: "error",
-				value: msg,
+				event: 'error',
+				value: msg
 			});
 		};
 
@@ -311,36 +318,39 @@ if (typeof VideoViewPlugin !== "function") {
 		};
 
 		#setSubtitleTrack = () => {
-			const trackId = !this.#showSubtitle ? -1 : this.#overrideSubtitleTrack < 0 ? this.#getDefaultTrack(2) : this.#overrideSubtitleTrack;
+			const trackId = !this.#showSubtitle ? -1
+				: this.#overrideSubtitleTrack < 0 ? this.#getDefaultTrack(2)
+					: this.#overrideSubtitleTrack;
 			const textTracks = this.#dom.textTracks;
 			for (let i = 0; i < textTracks.length; i++) {
-				const mode = VideoViewPlugin.#getTrackId(textTracks, i) === trackId ? "showing" : "disabled";
+				const mode = VideoViewPlugin.#getTrackId(textTracks, i) === trackId ? 'showing' : 'disabled';
 				if (textTracks[i].mode !== mode) {
 					textTracks[i].mode = mode;
 				}
 			}
 		};
 
-		#configureShaka = () =>
-			this.#shaka.configure({
-				streaming: {
-					lowLatencyMode: true,
-				},
-				abr: {
-					restrictions: {
-						maxHeight: this.#maxVideoHeight,
-						maxWidth: this.#maxVideoWidth,
-						maxBandwidth: this.#maxBitrate,
-					},
-				},
-			});
+		#configureShaka = () => this.#shaka.configure({
+			streaming: {
+				lowLatencyMode: true
+			},
+			abr: {
+				restrictions: {
+					maxHeight: this.#maxVideoHeight,
+					maxWidth: this.#maxVideoWidth,
+					maxBandwidth: this.#maxBitrate
+				}
+			}
+		});
 
 		/**
 		 * 1: audio, 2: subtitle
 		 * @param {1|2} type
 		 */
-		#getDefaultTrack = (type) => {
-			const [lang, getDefaultTrack] = type === 1 ? [this.#preferredAudioLanguage, this.#getDefaultAudioTrack] : [this.#preferredSubtitleLanguage, this.#getDefaultSubtitleTrack];
+		#getDefaultTrack = type => {
+			const [lang, getDefaultTrack] = type === 1
+				? [this.#preferredAudioLanguage, this.#getDefaultAudioTrack]
+				: [this.#preferredSubtitleLanguage, this.#getDefaultSubtitleTrack];
 			if (lang) {
 				const j = getDefaultTrack(lang);
 				if (j >= 0) {
@@ -360,7 +370,7 @@ if (typeof VideoViewPlugin !== "function") {
 			this.pause();
 			this.#unmute();
 			this.#state = 0;
-			this.#source = "";
+			this.#source = '';
 			this.#streaming = this.#hasVideo = false;
 			this.#playTime = 0;
 			this.#position = 0;
@@ -369,25 +379,25 @@ if (typeof VideoViewPlugin !== "function") {
 				this.#shaka.destroy();
 				this.#shaka = null;
 			} else {
-				for (const src of this.#dom.getElementsByTagName("source")) {
+				for (const src of this.#dom.getElementsByTagName('source')) {
 					src.remove();
 				}
-				this.#dom.removeAttribute("src");
+				this.#dom.removeAttribute('src');
 				this.#dom.load();
 			}
 			if (!VideoViewPlugin.#isApple) {
 				if (document.fullscreenEnabled) {
-					removeEventListener("fullscreenchange", this.#displayModeChange);
+					removeEventListener('fullscreenchange', this.#displayModeChange);
 				}
 				if (document.pictureInPictureEnabled) {
-					removeEventListener("enterpictureinpicture", this.#displayModeChange);
-					removeEventListener("leavepictureinpicture", this.#displayModeChange);
+					removeEventListener('enterpictureinpicture', this.#displayModeChange);
+					removeEventListener('leavepictureinpicture', this.#displayModeChange);
 					if (document.pictureInPictureElement === this.#dom) {
 						document.exitPictureInPicture();
 					}
 				}
 			}
-			this.setStyle("");
+			this.setStyle('');
 			this.#dom = null;
 		};
 
@@ -399,16 +409,16 @@ if (typeof VideoViewPlugin !== "function") {
 				if (this.#state === state) {
 					// browser may require user interaction to play media with sound
 					// in this case, we can mute the media first and then unmute it when user interacts with the page
-					if (e.name === "NotAllowedError") {
+					if (e.name === 'NotAllowedError') {
 						if (!this.#dom.muted) {
 							this.#dom.muted = true;
-							addEventListener("keydown", this.#unmute, VideoViewPlugin.#unmuteOption);
-							addEventListener("keyup", this.#unmute, VideoViewPlugin.#unmuteOption);
-							addEventListener("mousedown", this.#unmute, VideoViewPlugin.#unmuteOption);
-							addEventListener("mouseup", this.#unmute, VideoViewPlugin.#unmuteOption);
-							addEventListener("touchstart", this.#unmute, VideoViewPlugin.#unmuteOption);
-							addEventListener("touchend", this.#unmute, VideoViewPlugin.#unmuteOption);
-							addEventListener("touchmove", this.#unmute, VideoViewPlugin.#unmuteOption);
+							addEventListener('keydown', this.#unmute, VideoViewPlugin.#unmuteOption);
+							addEventListener('keyup', this.#unmute, VideoViewPlugin.#unmuteOption);
+							addEventListener('mousedown', this.#unmute, VideoViewPlugin.#unmuteOption);
+							addEventListener('mouseup', this.#unmute, VideoViewPlugin.#unmuteOption);
+							addEventListener('touchstart', this.#unmute, VideoViewPlugin.#unmuteOption);
+							addEventListener('touchend', this.#unmute, VideoViewPlugin.#unmuteOption);
+							addEventListener('touchmove', this.#unmute, VideoViewPlugin.#unmuteOption);
 						}
 						this.#play();
 					}
@@ -421,7 +431,7 @@ if (typeof VideoViewPlugin !== "function") {
 		 * @param {boolean} fast
 		 */
 		#seekTo = (position, fast) => {
-			if (fast && typeof this.#dom.fastSeek === "function") {
+			if (fast && typeof this.#dom.fastSeek === 'function') {
 				this.#dom.fastSeek(position / 1000);
 			} else {
 				this.#dom.currentTime = position / 1000;
@@ -430,7 +440,7 @@ if (typeof VideoViewPlugin !== "function") {
 
 		/**
 		 * sendMessage: callback function from dart side
-		 * @param {function(Object):void} sendMessage
+		 * @param {function(Object):void} sendMessage 
 		 */
 		constructor(sendMessage) {
 			this.#id = VideoViewPlugin.#nextId++;
@@ -455,84 +465,82 @@ if (typeof VideoViewPlugin !== "function") {
 		/** @param {string} url */
 		open(url) {
 			this.close();
-			this.#dom = document.createElement("video");
-			this.#dom.style.display = "block";
-			this.#dom.style.width = "100%";
-			this.#dom.style.height = "100%";
-			this.#dom.style.pointerEvents = "none";
-			this.#dom.style.objectFit = "fill";
+			this.#dom = document.createElement('video');
+			this.#dom.style.display = 'block';
+			this.#dom.style.width = '100%';
+			this.#dom.style.height = '100%';
+			this.#dom.style.pointerEvents = 'none';
+			this.#dom.style.objectFit = 'fill';
 			this.#dom.volume = this.#volume;
-			this.#dom.preload = "auto";
+			this.#dom.preload = 'auto';
 			this.#dom.playsInline = true;
 			this.#dom.disableRemotePlayback = true;
 			this.#dom.controls = false;
 			this.#dom.autoplay = false;
 			this.#dom.loop = false;
 			if (this.#dom.controlsList) {
-				this.#dom.controlsList.add("nodownload");
+				this.#dom.controlsList.add('nodownload');
 			}
-			if ("webkitTouchCallout" in this.#dom.style) {
-				this.#dom.style.webkitTouchCallout = "none";
+			if ('webkitTouchCallout' in this.#dom.style) {
+				this.#dom.style.webkitTouchCallout = 'none';
 			} else {
-				this.#dom.addEventListener("contextmenu", (e) => e.preventDefault());
+				this.#dom.addEventListener('contextmenu', e => e.preventDefault());
 			}
-			this.#dom.addEventListener("ratechange", () => {
+			this.#dom.addEventListener('ratechange', () => {
 				if (this.#dom.playbackRate > 2) {
 					this.#dom.playbackRate = 2;
 				} else if (this.#dom.playbackRate < 0.5) {
 					this.#dom.playbackRate = 0.5;
 				} else {
 					this.#sendMessage({
-						event: "speed",
-						value: this.#dom.playbackRate,
+						event: 'speed',
+						value: this.#dom.playbackRate
 					});
 				}
 			});
-			this.#dom.addEventListener("volumechange", () =>
-				this.#sendMessage({
-					event: "volume",
-					value: this.#dom.volume,
-				})
-			);
-			this.#dom.addEventListener("waiting", () => {
+			this.#dom.addEventListener('volumechange', () => this.#sendMessage({
+				event: 'volume',
+				value: this.#dom.volume
+			}));
+			this.#dom.addEventListener('waiting', () => {
 				if (this.#state > 1) {
 					this.#sendMessage({
-						event: "loading",
-						value: true,
+						event: 'loading',
+						value: true
 					});
 				}
 			});
-			this.#dom.addEventListener("playing", () => {
+			this.#dom.addEventListener('playing', () => {
 				if (this.#state > 1) {
 					this.#sendMessage({
-						event: "loading",
-						value: false,
+						event: 'loading',
+						value: false
 					});
 				}
 			});
-			this.#dom.addEventListener("seeking", () => {
+			this.#dom.addEventListener('seeking', () => {
 				if (this.#state > 1) {
 					this.#sendMessage({
-						event: "seeking",
-						value: true,
+						event: 'seeking',
+						value: true
 					});
 					this.#sendPosition();
 				}
 			});
-			this.#dom.addEventListener("seeked", () => {
+			this.#dom.addEventListener('seeked', () => {
 				if (this.#state > 1) {
 					this.#sendMessage({
-						event: "seeking",
-						value: false,
+						event: 'seeking',
+						value: false
 					});
 				}
 			});
-			this.#dom.addEventListener("timeupdate", () => {
+			this.#dom.addEventListener('timeupdate', () => {
 				if (this.#state > 1) {
 					this.#sendPosition();
 				}
 			});
-			this.#dom.addEventListener("play", (e) => {
+			this.#dom.addEventListener('play', e => {
 				if (this.#playTime) {
 					this.#playTime = e.timeStamp;
 				}
@@ -542,16 +550,15 @@ if (typeof VideoViewPlugin !== "function") {
 						VideoViewPlugin.#requestWakeLock(this.#id, true);
 					}
 					this.#sendMessage({
-						event: "playing",
-						value: true,
+						event: 'playing',
+						value: true
 					});
 				}
 			});
-			this.#dom.addEventListener("pause", (e) => {
+			this.#dom.addEventListener('pause', e => {
 				if (this.#state === 3) {
-					if (this.#dom.duration === this.#dom.currentTime) {
-						// ended
-						this.#sendMessage({ event: "finished" });
+					if (this.#dom.duration === this.#dom.currentTime) { // ended
+						this.#sendMessage({ event: 'finished' });
 						if (this.#streaming) {
 							this.#close();
 						} else if (this.#looping) {
@@ -562,27 +569,25 @@ if (typeof VideoViewPlugin !== "function") {
 							VideoViewPlugin.#requestWakeLock(this.#id, false);
 							this.#playTime = 0;
 						}
-					} else if (e.timeStamp - this.#playTime < 50) {
-						// auto play may stop immediately on chrome
+					} else if (e.timeStamp - this.#playTime < 50) { // auto play may stop immediately on chrome
 						this.#play();
-					} else {
-						// paused
+					} else { // paused
 						this.#state = 2;
 						VideoViewPlugin.#requestWakeLock(this.#id, false);
 						this.#playTime = 0;
 						this.#sendMessage({
-							event: "playing",
-							value: false,
+							event: 'playing',
+							value: false
 						});
 					}
 				}
 			});
-			this.#dom.addEventListener("resize", () => {
+			this.#dom.addEventListener('resize', () => {
 				if (this.#state > 1) {
 					this.#sendSize();
 				}
 			});
-			this.#dom.addEventListener("progress", () => {
+			this.#dom.addEventListener('progress', () => {
 				if (this.#state > 0 && !this.#streaming) {
 					for (let i = 0; i < this.#dom.buffered.length; i++) {
 						const end = this.#dom.buffered.end(i);
@@ -598,7 +603,7 @@ if (typeof VideoViewPlugin !== "function") {
 					}
 				}
 			});
-			this.#dom.addEventListener("loadeddata", () => {
+			this.#dom.addEventListener('loadeddata', () => {
 				if (this.#state === 1) {
 					this.#streaming = this.#shaka ? this.#shaka.isLive() : this.#dom.duration === Infinity;
 					this.setOverrideAudio(null);
@@ -613,7 +618,7 @@ if (typeof VideoViewPlugin !== "function") {
 					}
 				}
 			});
-			this.#dom.addEventListener("canplay", () => {
+			this.#dom.addEventListener('canplay', () => {
 				if (this.#state === 1) {
 					this.#state = 2;
 					this.#seeking = false;
@@ -626,7 +631,7 @@ if (typeof VideoViewPlugin !== "function") {
 								language: tracks[i].language,
 								format: tracks[i].codecs,
 								sampleRate: tracks[i].audioSamplingRate | 0,
-								channels: tracks[i].channelsCount | 0,
+								channels: tracks[i].channelsCount | 0
 							};
 						}
 					} else if (this.#dom.audioTracks) {
@@ -638,7 +643,7 @@ if (typeof VideoViewPlugin !== "function") {
 								format: tracks[i].configuration?.codec,
 								bitRate: tracks[i].configuration?.bitrate,
 								channels: tracks[i].configuration?.numberOfChannels,
-								sampleRate: tracks[i].configuration?.sampleRate,
+								sampleRate: tracks[i].configuration?.sampleRate
 							};
 						}
 					}
@@ -649,7 +654,7 @@ if (typeof VideoViewPlugin !== "function") {
 							subtitleTracks[VideoViewPlugin.#getTrackId(tracks, i)] = {
 								title: tracks[i].label,
 								language: tracks[i].language,
-								format: tracks[i].kind,
+								format: tracks[i].kind
 							};
 						}
 					}
@@ -658,11 +663,11 @@ if (typeof VideoViewPlugin !== "function") {
 						this.#playTime = Infinity;
 					}
 					this.#sendMessage({
-						event: "mediaInfo",
-						duration: this.#streaming ? 0 : (this.#dom.duration * 1000) | 0,
+						event: 'mediaInfo',
+						duration: this.#streaming ? 0 : this.#dom.duration * 1000 | 0,
 						audioTracks: audioTracks,
 						subtitleTracks: subtitleTracks,
-						source: this.#source,
+						source: this.#source
 					});
 					if (!this.#streaming) {
 						if (this.#dom.currentTime > 0) {
@@ -677,7 +682,7 @@ if (typeof VideoViewPlugin !== "function") {
 					}
 				}
 			});
-			this.#dom.addEventListener("error", () => {
+			this.#dom.addEventListener('error', () => {
 				if (this.#state > 0) {
 					for (const n in MediaError) {
 						if (MediaError[n] === this.#dom.error.code) {
@@ -688,39 +693,92 @@ if (typeof VideoViewPlugin !== "function") {
 				}
 			});
 			if (VideoViewPlugin.#isApple) {
-				this.#dom.addEventListener("webkitpresentationmodechanged", (e) => {
+				this.#dom.addEventListener('webkitpresentationmodechanged', e => {
 					if (this.#state > 0) {
-						this.#sendDisplayMode(
-							{
-								inline: 0,
-								fullscreen: 1,
-								"picture-in-picture": 2,
-							}[this.#dom.webkitPresentationMode]
-						);
+						this.#sendDisplayMode({
+							inline: 0,
+							fullscreen: 1,
+							'picture-in-picture': 2
+						}[this.#dom.webkitPresentationMode]);
 					}
 				});
 			} else {
 				if (document.fullscreenEnabled) {
-					addEventListener("fullscreenchange", this.#displayModeChange);
+					addEventListener('fullscreenchange', this.#displayModeChange);
 				}
 				if (document.pictureInPictureEnabled) {
-					addEventListener("enterpictureinpicture", this.#displayModeChange);
-					addEventListener("leavepictureinpicture", this.#displayModeChange);
+					addEventListener('enterpictureinpicture', this.#displayModeChange);
+					addEventListener('leavepictureinpicture', this.#displayModeChange);
 				}
 			}
-			this.#dom.textTracks.addEventListener("change", () => {
+			this.#dom.textTracks.addEventListener('change', () => {
 				if (this.#state > 1 && !this.#subtitleOnChange) {
-					this.#subtitleOnChange = setTimeout(
-						(source) => {
-							this.#subtitleOnChange = 0;
-							if (this.#state > 1 && this.#source === source) {
+					this.#subtitleOnChange = setTimeout(source => {
+						this.#subtitleOnChange = 0;
+						if (this.#state > 1 && this.#source === source) {
+							let id = -1,
+								candidate = -1;
+							const textTracks = this.#dom.textTracks,
+								defaultTrack = this.#overrideSubtitleTrack < 0 ? this.#getDefaultTrack(2) : this.#overrideSubtitleTrack;
+							for (let i = 0; i < textTracks.length; i++) {
+								if (textTracks[i].mode === 'showing' && VideoViewPlugin.#isSubtitle(textTracks[i])) {
+									const trackId = VideoViewPlugin.#getTrackId(textTracks, i);
+									if (trackId === defaultTrack) {
+										id = trackId;
+										break;
+									} else if (candidate < 0) {
+										candidate = trackId;
+									}
+								}
+							}
+							if (id < 0 && candidate >= 0) {
+								id = candidate;
+							}
+							if (this.#showSubtitle) {
+								if (id < 0) {
+									this.#showSubtitle = false;
+									this.#sendMessage({
+										event: 'showSubtitle',
+										value: false
+									});
+								} else if (id !== this.#overrideSubtitleTrack && (this.#overrideSubtitleTrack >= 0 || id !== this.#getDefaultTrack(2))) {
+									this.#overrideSubtitleTrack = id;
+									this.#sendMessage({
+										event: 'overrideSubtitle',
+										value: `${id}`
+									});
+								}
+							} else if (id >= 0) {
+								this.#showSubtitle = true;
+								this.#sendMessage({
+									event: 'showSubtitle',
+									value: true
+								});
+								if (id !== this.#overrideSubtitleTrack) {
+									this.#overrideSubtitleTrack = id;
+									this.#sendMessage({
+										event: 'overrideSubtitle',
+										value: `${id}`
+									});
+								}
+							}
+						}
+					}, 0, this.#source);
+				}
+			});
+			if (this.#dom.audioTracks) {
+				const audioTracks = this.#dom.audioTracks;
+				audioTracks.addEventListener('change', () => {
+					if (this.#state > 1 && !this.#shaka && !this.#audioOnChange) {
+						this.#audioOnChange = setTimeout(source => {
+							this.#audioOnChange = 0;
+							if (this.#state > 1 && !this.#shaka && this.#source === source) {
 								let id = -1,
 									candidate = -1;
-								const textTracks = this.#dom.textTracks,
-									defaultTrack = this.#overrideSubtitleTrack < 0 ? this.#getDefaultTrack(2) : this.#overrideSubtitleTrack;
-								for (let i = 0; i < textTracks.length; i++) {
-									if (textTracks[i].mode === "showing" && VideoViewPlugin.#isSubtitle(textTracks[i])) {
-										const trackId = VideoViewPlugin.#getTrackId(textTracks, i);
+								const defaultTrack = this.#overrideAudioTrack < 0 ? this.#getDefaultTrack(1) : this.#overrideAudioTrack;
+								for (let i = 0; i < audioTracks.length; i++) {
+									if (audioTracks[i].enabled) {
+										const trackId = VideoViewPlugin.#getTrackId(audioTracks, i);
 										if (trackId === defaultTrack) {
 											id = trackId;
 											break;
@@ -732,102 +790,43 @@ if (typeof VideoViewPlugin !== "function") {
 								if (id < 0 && candidate >= 0) {
 									id = candidate;
 								}
-								if (this.#showSubtitle) {
-									if (id < 0) {
-										this.#showSubtitle = false;
-										this.#sendMessage({
-											event: "showSubtitle",
-											value: false,
-										});
-									} else if (id !== this.#overrideSubtitleTrack && (this.#overrideSubtitleTrack >= 0 || id !== this.#getDefaultTrack(2))) {
-										this.#overrideSubtitleTrack = id;
-										this.#sendMessage({
-											event: "overrideSubtitle",
-											value: `${id}`,
-										});
-									}
-								} else if (id >= 0) {
-									this.#showSubtitle = true;
+								if (id >= 0 && id !== this.#overrideAudioTrack && (this.#overrideAudioTrack >= 0 || id !== this.#getDefaultTrack(1))) {
+									this.#overrideAudioTrack = id;
 									this.#sendMessage({
-										event: "showSubtitle",
-										value: true,
+										event: 'overrideAudio',
+										value: `${id}`
 									});
-									if (id !== this.#overrideSubtitleTrack) {
-										this.#overrideSubtitleTrack = id;
-										this.#sendMessage({
-											event: "overrideSubtitle",
-											value: `${id}`,
-										});
-									}
 								}
 							}
-						},
-						0,
-						this.#source
-					);
-				}
-			});
-			if (this.#dom.audioTracks) {
-				const audioTracks = this.#dom.audioTracks;
-				audioTracks.addEventListener("change", () => {
-					if (this.#state > 1 && !this.#shaka && !this.#audioOnChange) {
-						this.#audioOnChange = setTimeout(
-							(source) => {
-								this.#audioOnChange = 0;
-								if (this.#state > 1 && !this.#shaka && this.#source === source) {
-									let id = -1,
-										candidate = -1;
-									const defaultTrack = this.#overrideAudioTrack < 0 ? this.#getDefaultTrack(1) : this.#overrideAudioTrack;
-									for (let i = 0; i < audioTracks.length; i++) {
-										if (audioTracks[i].enabled) {
-											const trackId = VideoViewPlugin.#getTrackId(audioTracks, i);
-											if (trackId === defaultTrack) {
-												id = trackId;
-												break;
-											} else if (candidate < 0) {
-												candidate = trackId;
-											}
-										}
-									}
-									if (id < 0 && candidate >= 0) {
-										id = candidate;
-									}
-									if (id >= 0 && id !== this.#overrideAudioTrack && (this.#overrideAudioTrack >= 0 || id !== this.#getDefaultTrack(1))) {
-										this.#overrideAudioTrack = id;
-										this.#sendMessage({
-											event: "overrideAudio",
-											value: `${id}`,
-										});
-									}
-								}
-							},
-							0,
-							this.#source
-						);
+						}, 0, this.#source);
 					}
 				});
 			}
 			this.#state = 1;
 			this.#source = url;
-			let cType = "";
-			const m = url.match(/\.(?:mpd|m3u8|ism\/manifest)/gi);
+			let cType = '';
+			const m = url.match(/\.(?:mpd|m3u8|ism\/manifest)/ig);
 			if (m) {
 				const types = {
-					".mpd": "application/dash+xml",
-					".m3u8": "application/x-mpegurl",
-					".ism/manifest": "application/vnd.ms-sstr+xml",
+					'.mpd': 'application/dash+xml',
+					'.m3u8': 'application/x-mpegurl',
+					'.ism/manifest': 'application/vnd.ms-sstr+xml'
 				};
 				cType = types[m[m.length - 1].toLowerCase()];
-				if (self.shaka && VideoViewPlugin.#hasMSE && (!VideoViewPlugin.#isApple || cType !== types[".m3u8"])) {
+				if (self.shaka && VideoViewPlugin.#hasMSE && (!VideoViewPlugin.#isApple || cType !== types['.m3u8'])) {
+					if (!VideoViewPlugin.#shakaPolyfilled) {
+						shaka.polyfill.installAll();
+						VideoViewPlugin.#shakaPolyfilled = true;
+					}
 					this.#shaka = new shaka.Player();
 				}
 			}
 			if (this.#shaka) {
 				/** @param {shaka.util.Error} err */
-				const sendError = (err) => {
+				const sendError = err => {
 					if (this.#state > 0 && err.severity === shaka.util.Error.Severity.CRITICAL) {
 						const result = [];
-						for (const n of ["Category", "Code"]) {
+						for (const n of ['Category', 'Code']) {
 							const i = result.length,
 								v = err[n.toLowerCase()];
 							for (const k in shaka.util.Error[n]) {
@@ -840,11 +839,11 @@ if (typeof VideoViewPlugin !== "function") {
 								result.push(v);
 							}
 						}
-						this.#sendError(`${result.join(".")}`);
+						this.#sendError(`${result.join('.')}`);
 					}
 				};
 				this.#configureShaka();
-				this.#shaka.addEventListener("error", (evt) => {
+				this.#shaka.addEventListener('error', evt => {
 					evt.preventDefault();
 					if (this.#shaka.isLive() && [shaka.util.Error.Code.BAD_HTTP_STATUS, shaka.util.Error.Code.HTTP_ERROR, shaka.util.Error.Code.TIMEOUT].includes(evt.detail.code)) {
 						evt.detail.severity = shaka.util.Error.Severity.RECOVERABLE;
@@ -856,7 +855,7 @@ if (typeof VideoViewPlugin !== "function") {
 				this.#shaka.load(url, null, cType).catch(sendError);
 			} else {
 				if (cType && this.#dom.canPlayType(cType)) {
-					const src = document.createElement("source");
+					const src = document.createElement('source');
 					src.src = url;
 					src.type = cType;
 					this.#dom.appendChild(src);
@@ -939,7 +938,7 @@ if (typeof VideoViewPlugin !== "function") {
 		setDisplayMode(mode) {
 			if (this.#state > 0) {
 				if (VideoViewPlugin.#isApple) {
-					const type = ["inline", "fullscreen", "picture-in-picture"][mode];
+					const type = ['inline', 'fullscreen', 'picture-in-picture'][mode];
 					if (this.#dom.webkitSupportsPresentationMode(type)) {
 						if (this.#dom.webkitPresentationMode !== type) {
 							this.#dom.webkitSetPresentationMode(type);
@@ -954,10 +953,10 @@ if (typeof VideoViewPlugin !== "function") {
 					}
 					return true;
 				} else {
-					const type = mode === 1 ? "fullscreen" : "pictureInPicture";
-					if (document[type + "Enabled"]) {
-						if (document[type + "Element"] !== this.#dom) {
-							this.#dom["request" + type[0].toUpperCase() + type.slice(1)]();
+					const type = mode === 1 ? 'fullscreen' : 'pictureInPicture';
+					if (document[type + 'Enabled']) {
+						if (document[type + 'Element'] !== this.#dom) {
+							this.#dom['request' + type[0].toUpperCase() + type.slice(1)]();
 						}
 						return true;
 					}
@@ -1033,19 +1032,19 @@ if (typeof VideoViewPlugin !== "function") {
 		 * @param {string} objectFit
 		 * */
 		setStyle(objectFit, backgroundColor) {
-			if (typeof backgroundColor === "number") {
-				const s = backgroundColor.toString(16).padStart(8, "0"),
+			if (typeof backgroundColor === 'number') {
+				const s = backgroundColor.toString(16).padStart(8, '0'),
 					m = s.match(/^(.{2})(.{6})$/); // argb to rgba
 				this.#dom.style.backgroundColor = `#${m[2]}${m[1]}`;
 			}
-			if (typeof objectFit === "string") {
-				if (objectFit === "scaleDown") {
-					objectFit = "scale-down";
+			if (typeof objectFit === 'string') {
+				if (objectFit === 'scaleDown') {
+					objectFit = 'scale-down';
 				}
-				if (objectFit === "fitWidth" || objectFit === "fitHeight") {
-					this.#fitWidth = objectFit === "fitWidth";
+				if (objectFit === 'fitWidth' || objectFit === 'fitHeight') {
+					this.#fitWidth = objectFit === 'fitWidth';
 					if (!this.#observer) {
-						this.#observer = new ResizeObserver((entries) => {
+						this.#observer = new ResizeObserver(entries => {
 							this.#dom.width = Math.round(entries[0].contentBoxSize[0].inlineSize * devicePixelRatio * visualViewport.scale);
 							this.#dom.height = Math.round(entries[0].contentBoxSize[0].blockSize * devicePixelRatio * visualViewport.scale);
 							this.#onresize();
@@ -1059,8 +1058,8 @@ if (typeof VideoViewPlugin !== "function") {
 					if (this.#observer) {
 						this.#observer.unobserve(this.#dom);
 						this.#observer = null;
-						this.#dom.removeAttribute("width");
-						this.#dom.removeAttribute("height");
+						this.#dom.removeAttribute('width');
+						this.#dom.removeAttribute('height');
 					}
 				}
 			}

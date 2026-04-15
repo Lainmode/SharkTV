@@ -22,10 +22,14 @@ Future<List<Country>> setup() async {
 
   parseChannels(channels, streams, logos, dbCountries, dbCategories);
 
-  final usaTvCatalog = await fetch(
+try {
+    final usaTvCatalog = await fetch(
     "https://848b3516657c-usatv.baby-beamup.club/catalog/tv/all.json",
   );
-  parseUsaTvCatalogIntoFavorites(usaTvCatalog, favorites);
+  parseUsaTvCatalogIntoFavorites(usaTvCatalog, favorites); 
+} catch (e) {
+  print(e); 
+}
 
   return dbCountries;
 }
